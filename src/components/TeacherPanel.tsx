@@ -1,0 +1,878 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  BookOpen,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Copy,
+  Database,
+  Download,
+  Eye,
+  KeyRound,
+  LogOut,
+  Plus,
+  Save,
+  Search,
+  Trash2,
+  UserCheck,
+} from 'lucide-react';
+import type { ScoreInput, StudentRecord } from '../types.ts';
+import {
+  CRITERIA,
+  FEEDBACK_TEMPLATE_HTML,
+  PERFORMANCE_LEVELS,
+  calcFinalScore,
+  calcPartialWeighted,
+  getInitials,
+  getPerformanceLevel,
+  parseScore,
+  sanitizeFeedbackHtml,
+} from '../lib/rubric.ts';
+import { AddStudentModal } from './AddStudentModal.tsx';
+import { ChangePasswordModal } from './ChangePasswordModal.tsx';
+import { ConfirmModal } from './ConfirmModal.tsx';
+
+interface TeacherPanelProps {
+  students: StudentRecord[];
+  loading?: boolean;
+  selectedId: string | null;
+  onSelectStudent: (id: string) => void;
+  onAddStudent: (payload: {
+    name: string;
+    password?: string;
+    projectTitle?: string;
+    targetAudience?: string;
+  }) => Promise<StudentRecord>;
+  onSaveFeedback: (
+    id: string,
+    payload: {
+      projectTitle: string;
+      targetAudience: string;
+      feedback: string;
+      criterios: ScoreInput[];
+    }
+  ) => Promise<StudentRecord>;
+  onDeleteStudent: (id: string) => Promise<void>;
+  onPreviewStudent: (student: StudentRecord) => void;
+  onOpenRubric: () => void;
+  onChangeTeacherPassword: (currentPwd: string, newPwd: string) => Promise<void>;
+  onLogout: () => void;
+  onToast: (msg: string) => void;
+}
+
+type FilterTab = 'all' | 'done' | 'pending';
+
+export function TeacherPanel({
+  students,
+  loading = false,
+  selectedId,
+  onSelectStudent,
+  onAddStudent,
+  onSaveFeedback,
+  onDeleteStudent,
+  onPreviewStudent,
+  onOpenRubric,
+  onChangeTeacherPassword,
+  onLogout,
+  onToast,
+}: TeacherPanelProps) {
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<FilterTab>('all');
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [pwdModalOpen, setPwdModalOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [copiedPwd, setCopiedPwd] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [expandedCritId, setExpandedCritId] = useState<string | null>(null);
+
+  const selectedStudent = useMemo(
+    () => students.find((s) => s.id === selectedId) || null,
+    [students, selectedId]
+  );
+
+  const [projectTitle, setProjectTitle] = useState('');
+  const [targetAudience, setTargetAudience] = useState('');
+  const [scores, setScores] = useState<ScoreInput[]>(['', '', '', '', '', '']);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!selectedStudent) return;
+    setProjectTitle(selectedStudent.projectTitle || '');
+    setTargetAudience(selectedStudent.targetAudience || '');
+    const nextScores: ScoreInput[] = CRITERIA.map((_, idx) => {
+      const val = selectedStudent.criterios?.[idx];
+      return val === undefined || val === null ? '' : val;
+    });
+    setScores(nextScores);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = selectedStudent.feedback || '';
+    }
+    setDirty(false);
+    setCopiedPwd(false);
+  }, [selectedStudent?.id]);
+
+  const filteredStudents = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return students.filter((s) => {
+      const hasFeedback = Boolean(s.feedback || s.nota);
+      if (filter === 'done' && !hasFeedback) return false;
+      if (filter === 'pending' && hasFeedback) return false;
+      if (!q) return true;
+      return (
+        s.name.toLowerCase().includes(q) ||
+        s.projectTitle.toLowerCase().includes(q) ||
+        s.password.toLowerCase().includes(q)
+      );
+    });
+  }, [students, search, filter]);
+
+  const stats = useMemo(() => {
+    const total = students.length;
+    const done = students.filter((s) => Boolean(s.feedback || s.nota)).length;
+    return { total, done, pending: total - done };
+  }, [students]);
+
+  const finalScore = useMemo(() => calcFinalScore(scores), [scores]);
+  const partialScore = useMemo(() => calcPartialWeighted(scores), [scores]);
+  const filledCount = useMemo(
+    () => scores.filter((v) => parseScore(v) !== null).length,
+    [scores]
+  );
+
+  function execFormat(command: string) {
+    if (!editorRef.current) return;
+    editorRef.current.focus();
+    document.execCommand(command, false);
+    setDirty(true);
+  }
+
+  function insertTemplate() {
+    if (!editorRef.current) return;
+    const currentText = editorRef.current.innerText.trim();
+    if (!currentText) {
+      editorRef.current.innerHTML = FEEDBACK_TEMPLATE_HTML;
+    } else {
+      editorRef.current.innerHTML = `${editorRef.current.innerHTML}<br>${FEEDBACK_TEMPLATE_HTML}`;
+    }
+    setDirty(true);
+    onToast('Estrutura de feedback inserida.');
+  }
+
+  function updateScore(index: number, raw: string) {
+    setScores((prev) => {
+      const next = [...prev];
+      if (raw === '') {
+        next[index] = '';
+      } else {
+        const num = Number(raw);
+        if (Number.isFinite(num)) {
+          next[index] = Math.max(0, Math.min(10, num));
+        }
+      }
+      return next;
+    });
+    setDirty(true);
+  }
+
+  function setQuickScore(index: number, value: number) {
+    setScores((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+    setDirty(true);
+  }
+
+  async function handleSave(): Promise<StudentRecord | null> {
+    if (!selectedStudent) return null;
+    setSaving(true);
+    try {
+      const html = sanitizeFeedbackHtml(editorRef.current?.innerHTML || '');
+      const updated = await onSaveFeedback(selectedStudent.id, {
+        projectTitle,
+        targetAudience,
+        feedback: html,
+        criterios: scores,
+      });
+      setDirty(false);
+      onToast('Feedback e avaliação guardados na base de dados.');
+      return updated;
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Erro ao guardar.');
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handlePreview() {
+    const saved = await handleSave();
+    if (saved) {
+      onPreviewStudent(saved);
+    }
+  }
+
+  async function handleCopyPassword(pwd: string) {
+    try {
+      await navigator.clipboard.writeText(pwd);
+      setCopiedPwd(true);
+      onToast('Password copiada.');
+      setTimeout(() => setCopiedPwd(false), 2000);
+    } catch {
+      onToast(`Password: ${pwd}`);
+    }
+  }
+
+  function handleExportCsv() {
+    const headers = [
+      'Nome',
+      'Projeto',
+      'Público-Alvo',
+      'Password',
+      ...CRITERIA.map((c) => `${c.number}. ${c.name} (${c.weightPercent}%)`),
+      'Nota Final (0-10)',
+    ];
+    const rows = students.map((s) => [
+      s.name,
+      s.projectTitle,
+      s.targetAudience,
+      s.password,
+      ...CRITERIA.map((_, i) => (s.criterios?.[i] ?? '').toString()),
+      s.nota || '',
+    ]);
+    const csvContent = [headers, ...rows]
+      .map((row) =>
+        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(';')
+      )
+      .join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `avaliacoes-projeto-intervencao-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    onToast('Ficheiro CSV exportado.');
+  }
+
+  async function confirmDelete() {
+    if (!selectedStudent) return;
+    setDeleting(true);
+    try {
+      await onDeleteStudent(selectedStudent.id);
+      setDeleteConfirmOpen(false);
+      onToast('Formando removido da base de dados.');
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Erro ao remover.');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col bg-white">
+      {/* Top Bar Contract: Brand — Nav Links — Primary Action */}
+      <header className="sticky top-0 z-20 flex items-center justify-between gap-2 sm:gap-8 px-4 sm:px-8 py-3.5 border-b border-slate-200 bg-white/90 backdrop-blur-md">
+        <span className="font-display text-base sm:text-lg font-bold text-[#2563eb] whitespace-nowrap shrink-0">
+          FeedbackPrivado
+        </span>
+
+        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
+          <button
+            type="button"
+            onClick={onOpenRubric}
+            className="inline-flex items-center gap-1.5 hover:text-[#1a1a2e] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <BookOpen className="h-4 w-4" aria-hidden="true" />
+            <span>Critérios</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            className="inline-flex items-center gap-1.5 hover:text-[#1a1a2e] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            <span>Exportar CSV</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setPwdModalOpen(true)}
+            className="inline-flex items-center gap-1.5 hover:text-[#1a1a2e] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <KeyRound className="h-4 w-4" aria-hidden="true" />
+            <span>Password</span>
+          </button>
+        </nav>
+
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={onOpenRubric}
+            aria-label="Ver critérios de avaliação"
+            title="Critérios"
+            className="md:hidden p-2 text-slate-600 hover:text-[#1a1a2e] border border-slate-200 rounded-lg cursor-pointer"
+          >
+            <BookOpen className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            aria-label="Exportar CSV"
+            title="Exportar CSV"
+            className="md:hidden p-2 text-slate-600 hover:text-[#1a1a2e] border border-slate-200 rounded-lg cursor-pointer"
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setPwdModalOpen(true)}
+            aria-label="Alterar password do formador"
+            title="Alterar Password"
+            className="md:hidden p-2 text-slate-600 hover:text-[#1a1a2e] border border-slate-200 rounded-lg cursor-pointer"
+          >
+            <KeyRound className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="inline-flex items-center gap-1 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-medium text-[#1a1a2e] border border-slate-200 rounded-lg hover:bg-[#f8faff] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <LogOut className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
+            <span>Sair</span>
+          </button>
+        </div>
+      </header>
+
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[324px_1fr]">
+        {/* Sidebar */}
+        <aside className="border-b lg:border-b-0 lg:border-r border-slate-200 bg-[#fafbff] p-4 sm:p-5 flex flex-col gap-3">
+          <div className="flex items-center justify-between text-xs text-slate-500 px-1">
+            <span className="font-semibold uppercase tracking-wider">Formandos ({stats.total})</span>
+            <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
+              <Database className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Cloud Ativa</span>
+            </span>
+          </div>
+
+          <div className="relative">
+            <Search
+              className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Procurar formando ou projeto..."
+              aria-label="Procurar formando"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:border-[#2563eb]"
+            />
+          </div>
+
+          <div className="flex items-center gap-1 p-1 bg-slate-200/60 rounded-lg text-[11.5px] font-medium">
+            <button
+              type="button"
+              onClick={() => setFilter('all')}
+              className={`flex-1 py-1.5 px-1.5 rounded-md transition-colors cursor-pointer whitespace-nowrap text-center ${
+                filter === 'all'
+                  ? 'bg-white text-[#1a1a2e] shadow-xs'
+                  : 'text-slate-600 hover:text-[#1a1a2e]'
+              }`}
+            >
+              Todos ({stats.total})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter('done')}
+              className={`flex-1 py-1.5 px-1.5 rounded-md transition-colors cursor-pointer whitespace-nowrap text-center ${
+                filter === 'done'
+                  ? 'bg-white text-[#1a1a2e] shadow-xs'
+                  : 'text-slate-600 hover:text-[#1a1a2e]'
+              }`}
+            >
+              Feitos ({stats.done})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter('pending')}
+              className={`flex-1 py-1.5 px-1.5 rounded-md transition-colors cursor-pointer whitespace-nowrap text-center ${
+                filter === 'pending'
+                  ? 'bg-white text-[#1a1a2e] shadow-xs'
+                  : 'text-slate-600 hover:text-[#1a1a2e]'
+              }`}
+            >
+              Falta ({stats.pending})
+            </button>
+          </div>
+
+          <div className="space-y-1 max-h-[260px] lg:max-h-[calc(100vh-310px)] overflow-y-auto pr-0.5">
+            {loading && students.length === 0 ? (
+              <p className="text-xs text-slate-500 px-2 py-4 text-center leading-relaxed">
+                A sincronizar formandos na nuvem...
+              </p>
+            ) : filteredStudents.length === 0 ? (
+              <p className="text-xs text-slate-500 px-2 py-4 text-center leading-relaxed">
+                {students.length === 0
+                  ? 'Ainda não existem formandos. Adiciona o primeiro abaixo.'
+                  : 'Nenhum formando corresponde ao filtro.'}
+              </p>
+            ) : (
+              filteredStudents.map((s) => {
+                const isSelected = s.id === selectedId;
+                const hasFeedback = Boolean(s.feedback || s.nota);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => onSelectStudent(s.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-blue-100/80 text-[#1a1a2e]'
+                        : 'hover:bg-blue-50/70 text-[#1a1a2e]'
+                    }`}
+                  >
+                    <div className="h-9 w-9 rounded-full bg-[#dbeafe] text-[#1e3a8a] flex items-center justify-center text-xs font-semibold shrink-0">
+                      {getInitials(s.name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{s.name}</div>
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5 truncate">
+                        {hasFeedback ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
+                        ) : (
+                          <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+                        )}
+                        <span className="truncate">
+                          {hasFeedback
+                            ? s.nota
+                              ? `Avaliado · ${s.nota}/10`
+                              : 'Com feedback'
+                            : 'Sem feedback'}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setAddModalOpen(true)}
+            className="mt-1 w-full flex items-center justify-center gap-2 py-2.5 px-3 border border-dashed border-slate-300 rounded-xl text-sm font-medium text-slate-600 hover:border-[#2563eb] hover:text-[#2563eb] hover:bg-blue-50/40 transition-colors cursor-pointer"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            <span>Adicionar Formando</span>
+          </button>
+        </aside>
+
+        {/* Main Workspace */}
+        <main className="p-5 sm:p-8 lg:p-10 overflow-y-auto bg-white">
+          {!selectedStudent ? (
+            <div className="h-full min-h-[380px] flex flex-col items-center justify-center text-center text-slate-500 max-w-sm mx-auto">
+              <div className="h-14 w-14 rounded-2xl bg-[#f0f4ff] text-[#2563eb] flex items-center justify-center mb-4">
+                <UserCheck className="h-7 w-7" aria-hidden="true" />
+              </div>
+              <h2 className="font-display text-xl font-bold text-[#1a1a2e] mb-2">
+                Seleciona um formando
+              </h2>
+              <p className="text-sm leading-relaxed">
+                Escolhe um formando na lista à esquerda para escrever o feedback individualizado e preencher os critérios do Projeto de Intervenção.
+              </p>
+            </div>
+          ) : (
+            <div className="max-w-4xl space-y-6">
+              {/* Student Header & Password */}
+              <div className="flex flex-wrap items-start justify-between gap-4 pb-5 border-b border-slate-200">
+                <div>
+                  <h1 className="font-display text-2xl sm:text-3xl font-bold text-[#1a1a2e]">
+                    {selectedStudent.name}
+                  </h1>
+                  <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-slate-500">
+                    <span>Password individual:</span>
+                    <span className="inline-flex items-center gap-2 bg-[#f8faff] border border-slate-200 rounded-lg px-3 py-1 font-mono text-sm font-medium text-[#1a1a2e] tracking-wide">
+                      <span>{selectedStudent.password}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyPassword(selectedStudent.password)}
+                        aria-label={`Copiar password de ${selectedStudent.name}`}
+                        className="text-slate-500 hover:text-[#2563eb] transition-colors cursor-pointer"
+                      >
+                        {copiedPwd ? (
+                          <Check className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                        ) : (
+                          <Copy className="h-4 w-4" aria-hidden="true" />
+                        )}
+                      </button>
+                    </span>
+                    {dirty && (
+                      <span className="text-xs font-medium text-amber-700">
+                        · Alterações por guardar
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handlePreview}
+                    disabled={saving}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-[#1a1a2e] border border-slate-200 rounded-lg hover:bg-[#f8faff] transition-colors cursor-pointer"
+                  >
+                    <Eye className="h-4 w-4" aria-hidden="true" />
+                    <span>Pré-visualizar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-[#1a1a2e] rounded-lg hover:bg-[#2d2d4a] transition-colors disabled:opacity-60 cursor-pointer"
+                  >
+                    <Save className="h-4 w-4" aria-hidden="true" />
+                    <span>{saving ? 'A guardar...' : 'Guardar Feedback'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Project Identification Metadata */}
+              <section className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#fafbff] border border-slate-200 rounded-2xl p-5">
+                <div>
+                  <label
+                    htmlFor="edit-project-title"
+                    className="block text-xs font-medium text-slate-600 mb-1.5"
+                  >
+                    Nome do Projeto de Intervenção
+                  </label>
+                  <input
+                    id="edit-project-title"
+                    type="text"
+                    value={projectTitle}
+                    onChange={(e) => {
+                      setProjectTitle(e.target.value);
+                      setDirty(true);
+                    }}
+                    placeholder="Ex: Assistente Documental para a Direção"
+                    className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-xl outline-none focus:border-[#2563eb]"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="edit-target-audience"
+                    className="block text-xs font-medium text-slate-600 mb-1.5"
+                  >
+                    Público-Alvo / Contexto de Intervenção
+                  </label>
+                  <input
+                    id="edit-target-audience"
+                    type="text"
+                    value={targetAudience}
+                    onChange={(e) => {
+                      setTargetAudience(e.target.value);
+                      setDirty(true);
+                    }}
+                    placeholder="Ex: Direção, Departamentos, Biblioteca, Famílias"
+                    className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-xl outline-none focus:border-[#2563eb]"
+                  />
+                </div>
+              </section>
+
+              {/* Rich Comments Card */}
+              <section className="bg-white border border-slate-200 rounded-2xl p-6">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                  <h2 className="font-sans text-base font-semibold text-[#1a1a2e]">
+                    Comentários e Feedback Individualizado
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={insertTemplate}
+                    className="text-xs font-medium text-[#2563eb] hover:underline cursor-pointer"
+                  >
+                    + Inserir estrutura orientadora
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1 p-2 bg-[#f8faff] border border-slate-200 border-b-0 rounded-t-xl">
+                  <button
+                    type="button"
+                    onClick={() => execFormat('bold')}
+                    className="px-2.5 py-1 text-sm font-bold text-[#1a1a2e] rounded-md hover:bg-slate-200/70 cursor-pointer"
+                    title="Negrito"
+                  >
+                    B
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => execFormat('italic')}
+                    className="px-2.5 py-1 text-sm italic font-serif text-[#1a1a2e] rounded-md hover:bg-slate-200/70 cursor-pointer"
+                    title="Itálico"
+                  >
+                    I
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => execFormat('underline')}
+                    className="px-2.5 py-1 text-sm underline text-[#1a1a2e] rounded-md hover:bg-slate-200/70 cursor-pointer"
+                    title="Sublinhado"
+                  >
+                    U
+                  </button>
+                  <span className="w-px h-5 bg-slate-200 mx-1" aria-hidden="true" />
+                  <button
+                    type="button"
+                    onClick={() => execFormat('insertUnorderedList')}
+                    className="px-2.5 py-1 text-xs font-medium text-[#1a1a2e] rounded-md hover:bg-slate-200/70 cursor-pointer"
+                  >
+                    • Lista
+                  </button>
+                </div>
+
+                <div
+                  ref={editorRef}
+                  role="textbox"
+                  aria-multiline="true"
+                  aria-label="Comentários de feedback"
+                  contentEditable
+                  suppressContentEditableWarning
+                  data-placeholder="Escreve aqui o feedback detalhado sobre o Projeto de Intervenção..."
+                  onInput={() => setDirty(true)}
+                  className="rich-editor min-h-[180px] px-4 py-3.5 border border-slate-200 rounded-b-xl text-[0.95rem] leading-relaxed text-[#1a1a2e] bg-white outline-none focus:border-[#2563eb] feedback-prose"
+                />
+              </section>
+
+              {/* Criteria Rubric Evaluation Card */}
+              <section className="bg-white border border-slate-200 rounded-2xl p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <div>
+                    <h2 className="font-sans text-base font-semibold text-[#1a1a2e]">
+                      Avaliação por Critérios — Projeto de Intervenção
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Classificação de 0 a 10 valores · {filledCount}/6 critérios preenchidos
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onOpenRubric}
+                    className="text-xs font-medium text-[#2563eb] hover:underline cursor-pointer"
+                  >
+                    Ver matriz completa
+                  </button>
+                </div>
+
+                <div className="divide-y divide-slate-200 border border-slate-200 rounded-xl overflow-hidden">
+                  {CRITERIA.map((criterion, index) => {
+                    const scoreVal = parseScore(scores[index]);
+                    const activeLevel =
+                      scoreVal !== null ? getPerformanceLevel(scoreVal) : null;
+                    const isExpanded = expandedCritId === criterion.id;
+
+                    return (
+                      <div key={criterion.id} className="p-4 bg-white">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-sm text-[#1a1a2e]">
+                                {criterion.number}. {criterion.name}
+                              </span>
+                              <span className="font-mono text-xs text-slate-500 tabular-nums shrink-0">
+                                · {criterion.weightPercent}%
+                              </span>
+                            </div>
+
+                            {activeLevel && (
+                              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                <span className="font-semibold text-[#1e40af]">
+                                  {activeLevel.label} ({activeLevel.range}):
+                                </span>{' '}
+                                {criterion.descriptors[activeLevel.key]}
+                              </p>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedCritId(isExpanded ? null : criterion.id)
+                              }
+                              className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-[#2563eb] mt-1.5 cursor-pointer"
+                            >
+                              <span>
+                                {isExpanded ? 'Ocultar descritores' : 'Ver descritores do critério'}
+                              </span>
+                              {isExpanded ? (
+                                <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+                              ) : (
+                                <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                              )}
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 shrink-0">
+                            <div
+                              className="inline-flex items-center gap-1 p-1 bg-[#f8faff] border border-slate-200 rounded-lg"
+                              role="group"
+                              aria-label={`Níveis rápidos para ${criterion.name}`}
+                            >
+                              {PERFORMANCE_LEVELS.map((lvl) => {
+                                const isMatch = activeLevel?.key === lvl.key;
+                                return (
+                                  <button
+                                    key={lvl.key}
+                                    type="button"
+                                    onClick={() => setQuickScore(index, lvl.suggestedScore)}
+                                    title={`${lvl.label} (${lvl.range}): ${criterion.descriptors[lvl.key]}`}
+                                    className={`px-2 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                                      isMatch
+                                        ? 'bg-[#2563eb] text-white'
+                                        : 'text-slate-600 hover:bg-white hover:text-[#1a1a2e]'
+                                    }`}
+                                  >
+                                    {lvl.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <label htmlFor={`crit-input-${index}`} className="sr-only">
+                                Classificação para {criterion.name}
+                              </label>
+                              <input
+                                id={`crit-input-${index}`}
+                                type="number"
+                                min={0}
+                                max={10}
+                                step={0.5}
+                                value={scores[index] === null ? '' : scores[index]}
+                                onChange={(e) => updateScore(index, e.target.value)}
+                                placeholder="0–10"
+                                className="w-20 px-2.5 py-1.5 text-center font-mono text-sm font-medium border border-slate-200 rounded-lg outline-none focus:border-[#2563eb] tabular-nums"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                            {PERFORMANCE_LEVELS.map((lvl) => (
+                              <button
+                                key={lvl.key}
+                                type="button"
+                                onClick={() => setQuickScore(index, lvl.suggestedScore)}
+                                className={`text-left p-2.5 rounded-lg border transition-colors cursor-pointer ${
+                                  activeLevel?.key === lvl.key
+                                    ? 'bg-[#f0f4ff] border-[#2563eb]'
+                                    : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
+                                }`}
+                              >
+                                <div className="font-semibold text-[#1a1a2e] mb-0.5">
+                                  {lvl.label} ({lvl.range})
+                                </div>
+                                <div className="text-slate-600 leading-relaxed">
+                                  {criterion.descriptors[lvl.key]}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Final Grade Footer */}
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-4 px-5 py-4 bg-[#f0f4ff] border border-blue-200/80 rounded-xl">
+                  <div>
+                    <div className="text-sm font-semibold text-[#1a1a2e]">Nota Final Ponderada</div>
+                    <div className="text-xs text-slate-600">
+                      {finalScore !== null
+                        ? `Nível global: ${getPerformanceLevel(Number(finalScore)).label}`
+                        : `Soma parcial atual: ${partialScore.toFixed(2)} / 10 (preenche os 6 critérios para concluir)`}
+                    </div>
+                  </div>
+                  <div
+                    data-testid="nota-final-display"
+                    className="font-display text-2xl font-bold text-[#1e40af] tabular-nums"
+                  >
+                    {finalScore !== null ? `${finalScore} / 10` : '— / 10'}
+                  </div>
+                </div>
+              </section>
+
+              {/* Bottom Actions */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-[#1a1a2e] rounded-xl hover:bg-[#2d2d4a] transition-colors disabled:opacity-60 cursor-pointer"
+                  >
+                    <Save className="h-4 w-4" aria-hidden="true" />
+                    <span>{saving ? 'A guardar...' : 'Guardar Feedback'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePreview}
+                    disabled={saving}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-[#1a1a2e] border border-slate-200 rounded-xl hover:bg-[#f8faff] transition-colors cursor-pointer"
+                  >
+                    <Eye className="h-4 w-4" aria-hidden="true" />
+                    <span>Pré-visualizar</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-[#9b2226] bg-[#fde8e8] border border-[#f5c6c6] rounded-xl hover:bg-[#fbd5d5] transition-colors cursor-pointer"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  <span>Remover</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      <AddStudentModal
+        open={addModalOpen}
+        onClose={() => setAddModalOpen(false)}
+        onAdd={async (payload) => {
+          const created = await onAddStudent(payload);
+          onToast(`${created.name} adicionado/a! Password: ${created.password}`);
+        }}
+      />
+
+      <ChangePasswordModal
+        open={pwdModalOpen}
+        onClose={() => setPwdModalOpen(false)}
+        onChangePassword={async (cur, next) => {
+          await onChangeTeacherPassword(cur, next);
+          onToast('Password do formador atualizada.');
+        }}
+      />
+
+      <ConfirmModal
+        open={deleteConfirmOpen}
+        title="Remover Formando"
+        message={
+          selectedStudent
+            ? `Tens a certeza que queres remover ${selectedStudent.name} e todo o seu feedback da base de dados? Esta ação não pode ser anulada.`
+            : ''
+        }
+        confirmLabel="Sim, remover"
+        busy={deleting}
+        onCancel={() => setDeleteConfirmOpen(false)}
+        onConfirm={confirmDelete}
+      />
+    </div>
+  );
+}

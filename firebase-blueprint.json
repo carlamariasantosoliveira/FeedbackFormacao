@@ -1,0 +1,229 @@
+{
+  "entities": {
+    "SystemInit": {
+      "title": "SystemInit",
+      "description": "One-time bootstrap flag preventing re-initialization of the default trainer password.",
+      "type": "object",
+      "properties": {
+        "initialized": {
+          "type": "boolean",
+          "description": "True once the initial workspace has been created."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of initial bootstrap."
+        }
+      },
+      "required": ["initialized", "createdAt"]
+    },
+    "TeacherAccess": {
+      "title": "TeacherAccess",
+      "description": "Password-hash-keyed pointer granting access to the trainer workspace capability key.",
+      "type": "object",
+      "properties": {
+        "workspaceKey": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "minLength": 64,
+          "maxLength": 64,
+          "description": "256-bit random hex capability key identifying the trainer workspace."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when access record was created or rotated."
+        }
+      },
+      "required": ["workspaceKey", "updatedAt"]
+    },
+    "Workspace": {
+      "title": "Workspace",
+      "description": "Root container for trainer-managed student evaluations.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Display label for the course activity workspace."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": ["name", "createdAt"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Trainer-managed student record with individual access password, project metadata, comments, and 6-criteria rubric evaluation.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Full name of the student (formando)."
+        },
+        "projectTitle": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Title of the intervention project."
+        },
+        "targetAudience": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Target audience or educational context."
+        },
+        "password": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64,
+          "description": "Individual access code assigned to the student."
+        },
+        "accessHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "minLength": 64,
+          "maxLength": 64,
+          "description": "SHA-256 hex digest of the normalized student password."
+        },
+        "feedback": {
+          "type": "string",
+          "maxLength": 50000,
+          "description": "Sanitized HTML feedback written by the trainer."
+        },
+        "criterios": {
+          "type": "array",
+          "description": "Up to 6 numeric scores (0 to 10) or null matching the PDF rubric criteria."
+        },
+        "nota": {
+          "type": "string",
+          "maxLength": 16,
+          "description": "Formatted weighted final grade on the 0-10 scale."
+        },
+        "workspaceKey": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "minLength": 64,
+          "maxLength": 64,
+          "description": "Capability key of the owning workspace."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-update timestamp."
+        }
+      },
+      "required": [
+        "name",
+        "projectTitle",
+        "targetAudience",
+        "password",
+        "accessHash",
+        "feedback",
+        "criterios",
+        "nota",
+        "workspaceKey",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PublicFeedback": {
+      "title": "PublicFeedback",
+      "description": "Student-lookup projection keyed by SHA-256 password hash, containing only that student's feedback and rubric breakdown.",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Reference ID of the corresponding student document."
+        },
+        "workspaceKey": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "minLength": 64,
+          "maxLength": 64,
+          "description": "Capability key of the owning workspace."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Student display name."
+        },
+        "projectTitle": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Intervention project title."
+        },
+        "targetAudience": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Target audience."
+        },
+        "feedback": {
+          "type": "string",
+          "maxLength": 50000,
+          "description": "Sanitized HTML feedback."
+        },
+        "criterios": {
+          "type": "array",
+          "description": "6 numeric rubric scores (0 to 10) or null."
+        },
+        "nota": {
+          "type": "string",
+          "maxLength": 16,
+          "description": "Weighted final grade."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest update."
+        }
+      },
+      "required": [
+        "studentId",
+        "workspaceKey",
+        "name",
+        "projectTitle",
+        "targetAudience",
+        "feedback",
+        "criterios",
+        "nota",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/system/{docId}": {
+      "schema": { "$ref": "#/entities/SystemInit" },
+      "description": "Singleton bootstrap marker (/system/init)."
+    },
+    "/teacherAccess/{teacherHash}": {
+      "schema": { "$ref": "#/entities/TeacherAccess" },
+      "description": "SHA-256 trainer-password capability lookup."
+    },
+    "/workspaces/{workspaceKey}": {
+      "schema": { "$ref": "#/entities/Workspace" },
+      "description": "Capability-isolated trainer workspace root."
+    },
+    "/workspaces/{workspaceKey}/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Trainer-managed student evaluation records."
+    },
+    "/publicFeedbacks/{accessHash}": {
+      "schema": { "$ref": "#/entities/PublicFeedback" },
+      "description": "Single-document lookup by SHA-256 student password hash."
+    }
+  }
+}

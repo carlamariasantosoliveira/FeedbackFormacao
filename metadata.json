@@ -1,0 +1,6 @@
+{
+  "name": "FeedbackPrivado — Projeto de Intervenção",
+  "description": "Plataforma de feedback individualizado e avaliação por critérios para a atividade Projeto de Intervenção (Inteligência Artificial na Educação).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

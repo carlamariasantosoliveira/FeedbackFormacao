@@ -1,0 +1,238 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ---- Global Hardened Helpers ----
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string &&
+        id.size() >= 1 &&
+        id.size() <= 128 &&
+        id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidHash(hash) {
+      return hash is string &&
+        hash.size() == 64 &&
+        hash.matches('^[a-f0-9]{64}$');
+    }
+
+    function isValidCriteriaList(arr) {
+      return arr is list &&
+        arr.size() <= 6 &&
+        (
+          arr.size() == 0 ||
+          arr[0] == null ||
+          (arr[0] is number && arr[0] >= 0 && arr[0] <= 10)
+        );
+    }
+
+    function isValidSystemInit(data) {
+      return data.keys().hasAll(['initialized', 'createdAt']) &&
+        data.keys().hasOnly(['initialized', 'createdAt']) &&
+        data.initialized == true &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidTeacherAccess(data) {
+      return data.keys().hasAll(['workspaceKey', 'updatedAt']) &&
+        data.keys().hasOnly(['workspaceKey', 'updatedAt']) &&
+        isValidHash(data.workspaceKey) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidWorkspace(data) {
+      return data.keys().hasAll(['name', 'createdAt']) &&
+        data.keys().hasOnly(['name', 'createdAt']) &&
+        data.name is string &&
+        data.name.size() >= 1 &&
+        data.name.size() <= 120 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidStudent(data, workspaceKey) {
+      return data.keys().hasAll([
+          'name',
+          'projectTitle',
+          'targetAudience',
+          'password',
+          'accessHash',
+          'feedback',
+          'criterios',
+          'nota',
+          'workspaceKey',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'name',
+          'projectTitle',
+          'targetAudience',
+          'password',
+          'accessHash',
+          'feedback',
+          'criterios',
+          'nota',
+          'workspaceKey',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        data.projectTitle is string && data.projectTitle.size() <= 200 &&
+        data.targetAudience is string && data.targetAudience.size() <= 200 &&
+        data.password is string && data.password.size() >= 2 && data.password.size() <= 64 &&
+        isValidHash(data.accessHash) &&
+        data.feedback is string && data.feedback.size() <= 50000 &&
+        isValidCriteriaList(data.criterios) &&
+        data.nota is string && data.nota.size() <= 16 &&
+        isValidHash(data.workspaceKey) &&
+        data.workspaceKey == workspaceKey &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPublicFeedback(data) {
+      return data.keys().hasAll([
+          'studentId',
+          'workspaceKey',
+          'name',
+          'projectTitle',
+          'targetAudience',
+          'feedback',
+          'criterios',
+          'nota',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'studentId',
+          'workspaceKey',
+          'name',
+          'projectTitle',
+          'targetAudience',
+          'feedback',
+          'criterios',
+          'nota',
+          'updatedAt'
+        ]) &&
+        isValidId(data.studentId) &&
+        isValidHash(data.workspaceKey) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        data.projectTitle is string && data.projectTitle.size() <= 200 &&
+        data.targetAudience is string && data.targetAudience.size() <= 200 &&
+        data.feedback is string && data.feedback.size() <= 50000 &&
+        isValidCriteriaList(data.criterios) &&
+        data.nota is string && data.nota.size() <= 16 &&
+        data.updatedAt is timestamp;
+    }
+
+    // ---- /system/{docId} ----
+    match /system/{docId} {
+      allow get: if docId == 'init';
+      allow list: if false;
+      allow create: if docId == 'init' &&
+        !exists(/databases/$(database)/documents/system/init) &&
+        isValidSystemInit(incoming()) &&
+        incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // ---- /teacherAccess/{teacherHash} ----
+    match /teacherAccess/{teacherHash} {
+      allow get: if isValidHash(teacherHash);
+      allow list: if false;
+      allow create: if isValidHash(teacherHash) &&
+        isValidTeacherAccess(incoming()) &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/workspaces/$(incoming().workspaceKey));
+      allow update: if false;
+      allow delete: if isValidHash(teacherHash) &&
+        exists(/databases/$(database)/documents/workspaces/$(existing().workspaceKey));
+    }
+
+    // ---- /workspaces/{workspaceKey} ----
+    match /workspaces/{workspaceKey} {
+      allow get: if isValidHash(workspaceKey);
+      allow list: if false;
+      allow create: if isValidHash(workspaceKey) &&
+        isValidWorkspace(incoming()) &&
+        incoming().createdAt == request.time;
+      allow update, delete: if false;
+
+      match /students/{studentId} {
+        allow get: if isValidHash(workspaceKey) &&
+          isValidId(studentId) &&
+          exists(/databases/$(database)/documents/workspaces/$(workspaceKey));
+        allow list: if isValidHash(workspaceKey) &&
+          existing().workspaceKey == workspaceKey;
+        allow create: if isValidHash(workspaceKey) &&
+          isValidId(studentId) &&
+          isValidStudent(incoming(), workspaceKey) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          existsAfter(/databases/$(database)/documents/workspaces/$(workspaceKey)) &&
+          existsAfter(/databases/$(database)/documents/publicFeedbacks/$(incoming().accessHash));
+        allow update: if isValidHash(workspaceKey) &&
+          isValidId(studentId) &&
+          isValidStudent(incoming(), workspaceKey) &&
+          incoming().workspaceKey == existing().workspaceKey &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name',
+            'projectTitle',
+            'targetAudience',
+            'password',
+            'accessHash',
+            'feedback',
+            'criterios',
+            'nota',
+            'updatedAt'
+          ]) &&
+          exists(/databases/$(database)/documents/workspaces/$(workspaceKey)) &&
+          existsAfter(/databases/$(database)/documents/publicFeedbacks/$(incoming().accessHash));
+        allow delete: if isValidHash(workspaceKey) &&
+          isValidId(studentId) &&
+          exists(/databases/$(database)/documents/workspaces/$(workspaceKey));
+      }
+    }
+
+    // ---- /publicFeedbacks/{accessHash} ----
+    match /publicFeedbacks/{accessHash} {
+      allow get: if isValidHash(accessHash);
+      allow list: if false;
+      allow create: if isValidHash(accessHash) &&
+        isValidPublicFeedback(incoming()) &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/workspaces/$(incoming().workspaceKey)/students/$(incoming().studentId));
+      allow update: if isValidHash(accessHash) &&
+        isValidPublicFeedback(incoming()) &&
+        incoming().studentId == existing().studentId &&
+        incoming().workspaceKey == existing().workspaceKey &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'name',
+          'projectTitle',
+          'targetAudience',
+          'feedback',
+          'criterios',
+          'nota',
+          'updatedAt'
+        ]) &&
+        exists(/databases/$(database)/documents/workspaces/$(incoming().workspaceKey)/students/$(incoming().studentId));
+      allow delete: if isValidHash(accessHash) &&
+        exists(/databases/$(database)/documents/workspaces/$(existing().workspaceKey));
+    }
+  }
+}

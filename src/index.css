@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    color: #1a1a2e;
+    background-color: #ffffff;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.rich-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.feedback-prose p {
+  margin-bottom: 0.65rem;
+}
+
+.feedback-prose p:last-child {
+  margin-bottom: 0;
+}
+
+.feedback-prose ul {
+  list-style-type: disc;
+  padding-left: 1.35rem;
+  margin: 0.5rem 0;
+}
+
+.feedback-prose ol {
+  list-style-type: decimal;
+  padding-left: 1.35rem;
+  margin: 0.5rem 0;
+}
+
+.feedback-prose a {
+  color: #2563eb;
+  text-decoration: underline;
+  word-break: break-word;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+
+  .print-container {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-surface {
+    background: #f0f4ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .print-badge {
+    background: #1a1a2e !important;
+    color: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+.print-only {
+  display: none;
+}
