@@ -7,14 +7,18 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: "pages"
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      build_type: ${{ steps.pages_info.outputs.build_type }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -43,3 +47,38 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           publish_branch: gh-pages
+
+      - name: Configure GitHub Pages source automatically
+        id: pages_info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X PUT "repos/${{ github.repository }}/pages" -f build_type=workflow >/dev/null 2>&1 || \
+            gh api -X PUT "repos/${{ github.repository }}/pages" -f build_type=legacy -f "source[branch]=gh-pages" -f "source[path]=/" >/dev/null 2>&1 || true
+
+          BUILD_TYPE=$(gh api "repos/${{ github.repository }}/pages" --jq '.build_type // ""' 2>/dev/null || echo "")
+          SOURCE_BRANCH=$(gh api "repos/${{ github.repository }}/pages" --jq '.source.branch // ""' 2>/dev/null || echo "")
+          echo "Detected build_type=$BUILD_TYPE source_branch=$SOURCE_BRANCH"
+          echo "build_type=$BUILD_TYPE" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Pages
+        if: steps.pages_info.outputs.build_type == 'workflow'
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        if: steps.pages_info.outputs.build_type == 'workflow'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.build_type == 'workflow'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
