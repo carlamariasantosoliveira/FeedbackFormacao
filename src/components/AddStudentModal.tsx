@@ -1,10 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { X } from 'lucide-react';
+import type { ActivityType } from '../types.ts';
+import { getActivityConfig } from '../lib/rubric.ts';
 
 interface AddStudentModalProps {
   open: boolean;
+  activityType: ActivityType;
   onClose: () => void;
   onAdd: (payload: {
+    activityType: ActivityType;
     name: string;
     password?: string;
     projectTitle?: string;
@@ -12,13 +16,20 @@ interface AddStudentModalProps {
   }) => Promise<void>;
 }
 
-export function AddStudentModal({ open, onClose, onAdd }: AddStudentModalProps) {
+export function AddStudentModal({
+  open,
+  activityType,
+  onClose,
+  onAdd,
+}: AddStudentModalProps) {
   const [name, setName] = useState('');
   const [projectTitle, setProjectTitle] = useState('');
   const [targetAudience, setTargetAudience] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const activity = getActivityConfig(activityType);
 
   useEffect(() => {
     if (!open) {
@@ -52,6 +63,7 @@ export function AddStudentModal({ open, onClose, onAdd }: AddStudentModalProps) 
     setSaving(true);
     try {
       await onAdd({
+        activityType,
         name: name.trim(),
         password: password.trim() || undefined,
         projectTitle: projectTitle.trim() || undefined,
@@ -80,9 +92,14 @@ export function AddStudentModal({ open, onClose, onAdd }: AddStudentModalProps) 
         className="bg-white border border-slate-200 rounded-2xl w-full max-w-[460px] p-7 sm:p-8 shadow-2xl"
       >
         <div className="flex items-start justify-between gap-4 mb-1">
-          <h3 id="add-student-title" className="font-display text-xl font-bold text-[#1a1a2e]">
-            Novo Formando
-          </h3>
+          <div>
+            <span className="inline-block text-[11px] font-semibold uppercase tracking-wider text-[#2563eb] mb-1">
+              {activity.activityTitle}
+            </span>
+            <h3 id="add-student-title" className="font-display text-xl font-bold text-[#1a1a2e]">
+              Novo Formando
+            </h3>
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -93,7 +110,7 @@ export function AddStudentModal({ open, onClose, onAdd }: AddStudentModalProps) 
           </button>
         </div>
         <p className="text-sm text-slate-500 mb-6">
-          Preenche os dados. Se deixares a password vazia, será gerada automaticamente.
+          Preenche os dados para esta área. Se deixares a password vazia, será gerada automaticamente.
         </p>
 
         <div className="space-y-4">
@@ -114,28 +131,28 @@ export function AddStudentModal({ open, onClose, onAdd }: AddStudentModalProps) 
 
           <div>
             <label htmlFor="new-student-project" className="block text-xs font-medium text-slate-600 mb-1.5">
-              Nome do Projeto de Intervenção (opcional)
+              {activity.titleFieldLabel} (opcional)
             </label>
             <input
               id="new-student-project"
               type="text"
               value={projectTitle}
               onChange={(e) => setProjectTitle(e.target.value)}
-              placeholder="Ex: Guia de IA para a Biblioteca Escolar"
+              placeholder={activity.titlePlaceholder}
               className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl outline-none focus:border-[#2563eb]"
             />
           </div>
 
           <div>
             <label htmlFor="new-student-audience" className="block text-xs font-medium text-slate-600 mb-1.5">
-              Público-Alvo (opcional)
+              {activity.audienceFieldLabel} (opcional)
             </label>
             <input
               id="new-student-audience"
               type="text"
               value={targetAudience}
               onChange={(e) => setTargetAudience(e.target.value)}
-              placeholder="Ex: Direção, Departamentos, Famílias"
+              placeholder={activity.audiencePlaceholder}
               className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl outline-none focus:border-[#2563eb]"
             />
           </div>

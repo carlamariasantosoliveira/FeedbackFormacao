@@ -1,10 +1,11 @@
 import { ClipboardList, GraduationCap, BookOpenCheck } from 'lucide-react';
+import type { ActivityType } from '../types.ts';
 import { CourseBrand } from './CourseBrand.tsx';
 
 interface HomeScreenProps {
   onSelectTeacher: () => void;
   onSelectStudent: () => void;
-  onOpenRubric: () => void;
+  onOpenRubric: (activity: ActivityType) => void;
 }
 
 export function HomeScreen({
@@ -19,9 +20,13 @@ export function HomeScreen({
           <CourseBrand />
         </div>
 
-        <h1 className="font-display text-xl sm:text-2xl font-bold text-[#1a1a2e] tracking-tight mb-8 text-balance">
-          Feedback Individualizado: Projeto de Intervenção
+        <h1 className="font-display text-xl sm:text-2xl font-bold text-[#1a1a2e] tracking-tight mb-2 text-balance">
+          Feedback Individualizado e Avaliação
         </h1>
+        <p className="text-sm text-slate-600 mb-8 max-w-lg text-balance">
+          Duas áreas de avaliação: <strong className="text-[#1a1a2e] font-semibold">Projeto de Intervenção</strong> e{' '}
+          <strong className="text-[#1a1a2e] font-semibold">Cenário de Aprendizagem com a IA</strong>.
+        </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-[560px]">
           <button
@@ -36,7 +41,7 @@ export function HomeScreen({
               Sou Formador
             </span>
             <span className="block text-sm text-white/90 leading-relaxed">
-              Aceder ao painel para gerir formandos e escrever feedback.
+              Aceder às áreas de avaliação para gerir formandos e escrever feedback.
             </span>
           </button>
 
@@ -57,14 +62,22 @@ export function HomeScreen({
           </button>
         </div>
 
-        <div className="mt-8">
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
           <button
             type="button"
-            onClick={onOpenRubric}
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-[#2563eb] transition-colors underline underline-offset-4 cursor-pointer py-2 px-3"
+            onClick={() => onOpenRubric('projeto')}
+            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-[#2563eb] transition-colors underline underline-offset-4 cursor-pointer py-1.5 px-2"
           >
             <BookOpenCheck className="h-4 w-4" aria-hidden="true" />
-            <span>Consultar Critérios de Avaliação do Projeto de Intervenção</span>
+            <span>Critérios: Projeto de Intervenção</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenRubric('cenario')}
+            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-[#2563eb] transition-colors underline underline-offset-4 cursor-pointer py-1.5 px-2"
+          >
+            <BookOpenCheck className="h-4 w-4" aria-hidden="true" />
+            <span>Critérios: Cenário de Aprendizagem</span>
           </button>
         </div>
       </div>

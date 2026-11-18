@@ -1,8 +1,8 @@
 import { ArrowLeft, BookOpen, Clock, Database, LogOut, Printer } from 'lucide-react';
-import type { StudentPublicRecord } from '../types.ts';
+import type { ActivityType, StudentPublicRecord } from '../types.ts';
 import {
-  CRITERIA,
   calcFinalScore,
+  getActivityConfig,
   getInitials,
   getPerformanceLevel,
   parseScore,
@@ -14,7 +14,7 @@ interface StudentFeedbackViewProps {
   student: StudentPublicRecord;
   isPreview?: boolean;
   onBackToPanel?: () => void;
-  onOpenRubric: () => void;
+  onOpenRubric: (activity: ActivityType) => void;
   onLogout: () => void;
 }
 
@@ -25,7 +25,9 @@ export function StudentFeedbackView({
   onOpenRubric,
   onLogout,
 }: StudentFeedbackViewProps) {
-  const finalScore = calcFinalScore(student.criterios);
+  const activity = getActivityConfig(student.activityType);
+  const criteria = activity.criteria;
+  const finalScore = calcFinalScore(student.criterios, student.activityType);
   const hasFeedback = Boolean(student.feedback || finalScore !== null);
   const overallLevel = finalScore !== null ? getPerformanceLevel(Number(finalScore)) : null;
 
@@ -37,7 +39,7 @@ export function StudentFeedbackView({
 
   const hasAllCriteria =
     student.criterios &&
-    student.criterios.length === CRITERIA.length &&
+    student.criterios.length === criteria.length &&
     student.criterios.every((v) => parseScore(v) !== null);
 
   return (
@@ -54,7 +56,7 @@ export function StudentFeedbackView({
           </span>
           <button
             type="button"
-            onClick={onOpenRubric}
+            onClick={() => onOpenRubric(student.activityType)}
             className="inline-flex items-center gap-1.5 text-slate-600 hover:text-[#2563eb] font-medium cursor-pointer"
           >
             <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
@@ -65,7 +67,7 @@ export function StudentFeedbackView({
         <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           <button
             type="button"
-            onClick={onOpenRubric}
+            onClick={() => onOpenRubric(student.activityType)}
             aria-label="Ver matriz de critérios"
             title="Ver matriz de critérios"
             className="sm:hidden p-2 text-slate-600 hover:text-[#2563eb] border border-slate-200 rounded-lg cursor-pointer"
@@ -113,7 +115,7 @@ export function StudentFeedbackView({
                 </h1>
                 <div className="text-sm text-slate-500 mt-0.5 space-y-0.5">
                   <div>
-                    <span>Projeto de Intervenção</span>
+                    <span className="font-medium text-[#1e40af]">{activity.activityTitle}</span>
                     {student.projectTitle && (
                       <>
                         <span aria-hidden="true"> · </span>
@@ -122,7 +124,9 @@ export function StudentFeedbackView({
                     )}
                   </div>
                   {student.targetAudience && (
-                    <div>Público-alvo: {student.targetAudience}</div>
+                    <div>
+                      {activity.audienceShortLabel}: {student.targetAudience}
+                    </div>
                   )}
                 </div>
               </div>
@@ -170,14 +174,14 @@ export function StudentFeedbackView({
                 <section>
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <h2 className="font-sans text-xs font-semibold uppercase tracking-wider text-slate-500">
-                      Avaliação por Critérios (Projeto de Intervenção)
+                      Avaliação por Critérios ({activity.activityTitle})
                     </h2>
                     <span className="text-xs text-slate-500 tabular-nums">
                       Escala 0–10 · Ponderação 100%
                     </span>
                   </div>
                   <div className="divide-y divide-slate-200 border border-slate-200 rounded-xl overflow-hidden">
-                    {CRITERIA.map((criterion, idx) => {
+                    {criteria.map((criterion, idx) => {
                       const val = parseScore(student.criterios[idx]) ?? 0;
                       const lvl = getPerformanceLevel(val);
                       return (
@@ -209,7 +213,7 @@ export function StudentFeedbackView({
               )}
 
               <div className="print-only pt-4 border-t border-slate-200 text-center text-xs text-slate-500">
-                Relatório de Feedback Individualizado · {student.name} · Gerado em {today}
+                Relatório de Feedback Individualizado ({activity.shortLabel}) · {student.name} · Gerado em {today}
               </div>
 
               <div className="no-print pt-2">

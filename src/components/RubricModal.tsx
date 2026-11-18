@@ -1,13 +1,31 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { CRITERIA, PERFORMANCE_LEVELS } from '../lib/rubric.ts';
+import type { ActivityType } from '../types.ts';
+import {
+  ACTIVITIES,
+  ACTIVITY_ORDER,
+  PERFORMANCE_LEVELS,
+} from '../lib/rubric.ts';
 
 interface RubricModalProps {
   open: boolean;
+  initialActivity?: ActivityType;
   onClose: () => void;
 }
 
-export function RubricModal({ open, onClose }: RubricModalProps) {
+export function RubricModal({
+  open,
+  initialActivity = 'projeto',
+  onClose,
+}: RubricModalProps) {
+  const [selectedActivity, setSelectedActivity] = useState<ActivityType>(initialActivity);
+
+  useEffect(() => {
+    if (open) {
+      setSelectedActivity(initialActivity);
+    }
+  }, [open, initialActivity]);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -18,6 +36,8 @@ export function RubricModal({ open, onClose }: RubricModalProps) {
   }, [open, onClose]);
 
   if (!open) return null;
+
+  const activeConfig = ACTIVITIES[selectedActivity];
 
   return (
     <div
@@ -33,11 +53,33 @@ export function RubricModal({ open, onClose }: RubricModalProps) {
         <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-slate-200">
           <div>
             <h2 id="rubric-modal-title" className="font-display text-xl sm:text-2xl font-bold text-[#1a1a2e]">
-              Critérios de Avaliação — Projeto de Intervenção
+              Critérios de Avaliação — {activeConfig.activityTitle}
             </h2>
             <p className="text-sm text-slate-500 mt-1">
-              Matriz oficial da atividade · Escala de 0 a 10 valores · Total de ponderação 100%
+              Matriz oficial da atividade ({activeConfig.criteria.length} critérios) · Escala de 0 a 10 valores · Ponderação 100%
             </p>
+            <div className="mt-3 inline-flex items-center gap-1 p-1 bg-slate-100 rounded-lg" role="tablist" aria-label="Selecionar matriz de critérios">
+              {ACTIVITY_ORDER.map((actId) => {
+                const cfg = ACTIVITIES[actId];
+                const active = selectedActivity === actId;
+                return (
+                  <button
+                    key={actId}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setSelectedActivity(actId)}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                      active
+                        ? 'bg-white text-[#1e40af] shadow-xs'
+                        : 'text-slate-600 hover:text-[#1a1a2e]'
+                    }`}
+                  >
+                    {cfg.shortLabel}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <button
             type="button"
@@ -70,7 +112,7 @@ export function RubricModal({ open, onClose }: RubricModalProps) {
               </tr>
             </thead>
             <tbody>
-              {CRITERIA.map((c) => (
+              {activeConfig.criteria.map((c) => (
                 <tr key={c.id} className="align-top hover:bg-slate-50/70">
                   <td className="p-3.5 border border-slate-200 font-semibold text-[#1a1a2e]">
                     {c.number}. {c.name}

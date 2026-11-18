@@ -1,5 +1,5 @@
-import type { ScoreInput } from '../types.ts';
-import { CRITERIA, parseScore } from './rubric.ts';
+import type { ActivityType, ScoreInput } from '../types.ts';
+import { getCriteriaForActivity, parseScore } from './rubric.ts';
 
 // Volumetric bounds synchronized verbatim with firebase-blueprint.json & firestore.rules
 export const BLUEPRINT_LIMITS = {
@@ -15,6 +15,10 @@ export const BLUEPRINT_LIMITS = {
   ID_PATTERN: /^[a-zA-Z0-9_\-]+$/,
   HASH_PATTERN: /^[a-f0-9]{64}$/,
 } as const;
+
+export function normalizeActivityType(raw: unknown): ActivityType {
+  return raw === 'cenario' ? 'cenario' : 'projeto';
+}
 
 async function sha256Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
@@ -42,19 +46,25 @@ export function generateRandomHexKey(): string {
 }
 
 export function normalizeCriteriaForFirestore(
-  criterios: readonly ScoreInput[] | undefined
+  criterios: readonly ScoreInput[] | undefined,
+  activityType: ActivityType = 'projeto'
 ): (number | null)[] {
+  const criteria = getCriteriaForActivity(activityType);
   const result: (number | null)[] = [];
-  for (let i = 0; i < CRITERIA.length; i += 1) {
+  for (let i = 0; i < criteria.length; i += 1) {
     const parsed = parseScore(criterios?.[i]);
     result.push(parsed !== null ? parsed : null);
   }
   return result;
 }
 
-export function fromFirestoreCriteria(raw: unknown): ScoreInput[] {
-  if (!Array.isArray(raw)) return ['', '', '', '', '', ''];
-  return CRITERIA.map((_, i) => {
+export function fromFirestoreCriteria(
+  raw: unknown,
+  activityType: ActivityType = 'projeto'
+): ScoreInput[] {
+  const criteria = getCriteriaForActivity(activityType);
+  if (!Array.isArray(raw)) return criteria.map(() => '');
+  return criteria.map((_, i) => {
     const val = raw[i];
     return typeof val === 'number' && Number.isFinite(val) ? val : '';
   });

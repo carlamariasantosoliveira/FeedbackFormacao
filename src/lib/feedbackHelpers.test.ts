@@ -7,6 +7,7 @@ import {
   generateRandomHexKey,
   hashStudentPassword,
   hashTeacherPassword,
+  normalizeActivityType,
   normalizeCriteriaForFirestore,
 } from './feedbackHelpers.ts';
 
@@ -32,12 +33,21 @@ test('generateRandomHexKey creates valid 64-char hex keys', () => {
   assert.match(k2, BLUEPRINT_LIMITS.HASH_PATTERN);
 });
 
-test('normalizeCriteriaForFirestore and fromFirestoreCriteria round-trip cleanly', () => {
-  const normalized = normalizeCriteriaForFirestore([10, '', 8.5, null, 12, -1]);
-  assert.deepEqual(normalized, [10, null, 8.5, null, null, null]);
+test('normalizeCriteriaForFirestore and fromFirestoreCriteria round-trip cleanly for both activities', () => {
+  const normalizedProjeto = normalizeCriteriaForFirestore([10, '', 8.5, null, 12, -1], 'projeto');
+  assert.deepEqual(normalizedProjeto, [10, null, 8.5, null, null, null]);
+  assert.deepEqual(fromFirestoreCriteria(normalizedProjeto, 'projeto'), [10, '', 8.5, '', '', '']);
 
-  const restored = fromFirestoreCriteria(normalized);
-  assert.deepEqual(restored, [10, '', 8.5, '', '', '']);
+  const normalizedCenario = normalizeCriteriaForFirestore([10, 8, '', 9, 8.5], 'cenario');
+  assert.deepEqual(normalizedCenario, [10, 8, null, 9, 8.5]);
+  assert.deepEqual(fromFirestoreCriteria(normalizedCenario, 'cenario'), [10, 8, '', 9, 8.5]);
+});
+
+test('normalizeActivityType defaults legacy documents to projeto', () => {
+  assert.equal(normalizeActivityType(undefined), 'projeto');
+  assert.equal(normalizeActivityType(null), 'projeto');
+  assert.equal(normalizeActivityType('projeto'), 'projeto');
+  assert.equal(normalizeActivityType('cenario'), 'cenario');
 });
 
 test('clampString trims and enforces blueprint max length', () => {

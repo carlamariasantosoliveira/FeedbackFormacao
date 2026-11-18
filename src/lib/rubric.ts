@@ -1,4 +1,6 @@
 import type {
+  ActivityConfig,
+  ActivityType,
   CriterionDefinition,
   PerformanceLevel,
   PerformanceLevelKey,
@@ -12,7 +14,7 @@ export const PERFORMANCE_LEVELS: readonly PerformanceLevel[] = [
   { key: 'insuficiente', label: 'Insuficiente', range: '0', suggestedScore: 0 },
 ] as const;
 
-export const CRITERIA: readonly CriterionDefinition[] = [
+export const PROJECT_CRITERIA: readonly CriterionDefinition[] = [
   {
     id: 'identificacao',
     number: 1,
@@ -111,6 +113,160 @@ export const CRITERIA: readonly CriterionDefinition[] = [
   },
 ] as const;
 
+export const SCENARIO_CRITERIA: readonly CriterionDefinition[] = [
+  {
+    id: 'enquadramento',
+    number: 1,
+    name: 'Enquadramento',
+    weight: 0.10,
+    weightPercent: 10,
+    descriptors: {
+      excelente:
+        'Apresenta todos os elementos solicitados: disciplina, ano de escolaridade, duração prevista, tema/conteúdo curricular e nome do professor.',
+      bom: 'Apresenta os elementos solicitados, com pequenas omissões ou imprecisões.',
+      satisfatorio:
+        'Apresenta informação incompleta, faltando vários elementos relevantes.',
+      insuficiente:
+        'Não apresenta o enquadramento ou a informação é inexistente.',
+    },
+  },
+  {
+    id: 'objetivos',
+    number: 2,
+    name: 'Objetivos de Aprendizagem',
+    weight: 0.20,
+    weightPercent: 20,
+    descriptors: {
+      excelente:
+        'Define objetivos claros, específicos e observáveis, alinhados com as aprendizagens pretendidas e adequados ao nível de ensino.',
+      bom: 'Define objetivos pertinentes e adequados, embora alguns possam ser mais específicos ou observáveis.',
+      satisfatorio:
+        'Apresenta objetivos vagos, pouco claros ou parcialmente desadequados às aprendizagens pretendidas.',
+      insuficiente:
+        'Não apresenta objetivos de aprendizagem ou estes são desadequados à proposta.',
+    },
+  },
+  {
+    id: 'metodologia',
+    number: 3,
+    name: 'Metodologia Ativa',
+    weight: 0.10,
+    weightPercent: 10,
+    descriptors: {
+      excelente:
+        'Identifica claramente a metodologia ativa predominante.',
+      bom: 'Apresenta uma identificação pouco clara ou incorreta.',
+      satisfatorio:
+        'Apresenta uma identificação pouco clara ou incorreta.',
+      insuficiente:
+        'Não identifica a metodologia ativa.',
+    },
+  },
+  {
+    id: 'produto_final',
+    number: 4,
+    name: 'Produto Final dos Alunos',
+    weight: 0.20,
+    weightPercent: 20,
+    descriptors: {
+      excelente:
+        'Descreve claramente o produto final ou a forma de aprendizagem pretendida, evidenciando a sua relevância curricular e o contributo da IA para as aprendizagens.',
+      bom: 'Descreve adequadamente o produto final ou a aprendizagem pretendida, embora a sua articulação curricular ou o contributo da IA possam ser mais claros.',
+      satisfatorio:
+        'Apresenta uma descrição pouco desenvolvida, com fraca articulação curricular ou contributo pouco evidente da IA.',
+      insuficiente:
+        'Não descreve o produto final ou a forma de aprendizagem pretendida.',
+    },
+  },
+  {
+    id: 'sequencia',
+    number: 5,
+    name: 'Sequência Pedagógica e Tecnologias Utilizadas',
+    weight: 0.40,
+    weightPercent: 40,
+    descriptors: {
+      excelente:
+        'Apresenta uma sequência pedagógica coerente e exequível, com momentos e duração definidos, papel mediador do professor, tarefas ativas dos alunos e identificação das ferramentas e da utilização da IA, quando aplicável.',
+      bom: 'Apresenta uma sequência adequada, com os elementos solicitados, embora alguns momentos, ações, tempos ou utilizações tecnológicas careçam de maior clareza ou detalhe.',
+      satisfatorio:
+        'Apresenta uma sequência pouco articulada ou incompleta, com lacunas na definição dos momentos, tempos, ações do professor ou dos alunos e/ou tecnologias utilizadas.',
+      insuficiente:
+        'Não apresenta uma sequência pedagógica estruturada ou esta não permite compreender como se desenvolve a proposta.',
+    },
+  },
+] as const;
+
+export const CRITERIA = PROJECT_CRITERIA;
+
+export const FEEDBACK_TEMPLATE_HTML =
+  '<p>Olá,</p>' +
+  '<p>O Projeto de Intervenção apresentado demonstra uma boa compreensão da atividade proposta.</p>' +
+  '<p><strong>Pontos Fortes</strong></p>' +
+  '<ul><li><strong>Pertinência e Contexto:</strong> Identifica claramente a necessidade educativa.</li>' +
+  '<li><strong>Integração da IA:</strong> Ferramentas bem articuladas com o objetivo.</li></ul>' +
+  '<p><strong>Aspetos a Melhorar</strong></p>' +
+  '<ul><li>Detalhar como os utilizadores finais irão aplicar o recurso no terreno.</li></ul>' +
+  '<p><strong>Recomendações</strong></p>' +
+  '<ul><li>Incluir exemplos práticos de prompts ou fluxos de validação.</li></ul>' +
+  '<p>Estou disponível para qualquer esclarecimento adicional.<br>A formadora, Carla Oliveira</p>';
+
+export const SCENARIO_FEEDBACK_TEMPLATE_HTML =
+  '<p>Olá,</p>' +
+  '<p>O Cenário de Aprendizagem apresentado revela uma proposta bem estruturada e exequível em contexto de sala de aula.</p>' +
+  '<p><strong>Pontos Fortes</strong></p>' +
+  '<ul><li><strong>Enquadramento e Metodologia Ativa:</strong> Os objetivos estão bem alinhados com o ano de escolaridade e a metodologia ativa escolhida.</li>' +
+  '<li><strong>Sequência Pedagógica e IA:</strong> A mediação do professor e o uso da IA pelos alunos são claros e adequados.</li></ul>' +
+  '<p><strong>Aspetos a Melhorar</strong></p>' +
+  '<ul><li>Clarificar a gestão do tempo ou o detalhe das tarefas dos alunos em algum momento da sequência.</li></ul>' +
+  '<p><strong>Recomendações</strong></p>' +
+  '<ul><li>Considerar momentos breves de reflexão crítica dos alunos sobre os resultados obtidos com a IA.</li></ul>' +
+  '<p>Estou disponível para qualquer esclarecimento adicional.<br>A formadora, Carla Oliveira</p>';
+
+export const ACTIVITIES: Record<ActivityType, ActivityConfig> = {
+  projeto: {
+    id: 'projeto',
+    label: 'Projeto de Intervenção',
+    shortLabel: 'Projeto de Intervenção',
+    activityTitle: 'Projeto de Intervenção',
+    titleFieldLabel: 'Nome do Projeto de Intervenção',
+    titlePlaceholder: 'Ex: Assistente Documental para a Direção',
+    audienceFieldLabel: 'Público-Alvo / Contexto de Intervenção',
+    audienceShortLabel: 'Público-alvo',
+    audiencePlaceholder: 'Ex: Direção, Departamentos, Biblioteca, Famílias',
+    feedbackPlaceholder: 'Escreve aqui o feedback detalhado sobre o Projeto de Intervenção...',
+    criteria: PROJECT_CRITERIA,
+    templateHtml: FEEDBACK_TEMPLATE_HTML,
+    csvSlug: 'projeto-intervencao',
+  },
+  cenario: {
+    id: 'cenario',
+    label: 'Cenário de Aprendizagem com a IA',
+    shortLabel: 'Cenário de Aprendizagem',
+    activityTitle: 'Cenário de Aprendizagem com a IA',
+    titleFieldLabel: 'Tema / Título do Cenário de Aprendizagem',
+    titlePlaceholder: 'Ex: Exploração Crítica de Fontes Históricas com IA',
+    audienceFieldLabel: 'Disciplina e Ano de Escolaridade',
+    audienceShortLabel: 'Disciplina / Ano',
+    audiencePlaceholder: 'Ex: História · 8.º Ano',
+    feedbackPlaceholder: 'Escreve aqui o feedback detalhado sobre o Cenário de Aprendizagem...',
+    criteria: SCENARIO_CRITERIA,
+    templateHtml: SCENARIO_FEEDBACK_TEMPLATE_HTML,
+    csvSlug: 'cenario-aprendizagem',
+  },
+};
+
+export const ACTIVITY_ORDER: readonly ActivityType[] = ['projeto', 'cenario'] as const;
+
+export function getActivityConfig(activityType: ActivityType = 'projeto'): ActivityConfig {
+  return ACTIVITIES[activityType] || ACTIVITIES.projeto;
+}
+
+export function getCriteriaForActivity(
+  activityType: ActivityType = 'projeto'
+): readonly CriterionDefinition[] {
+  return getActivityConfig(activityType).criteria;
+}
+
 export function parseScore(value: ScoreInput | undefined): number | null {
   if (value === '' || value === null || value === undefined) return null;
   const num = typeof value === 'number' ? value : Number(value);
@@ -118,24 +274,32 @@ export function parseScore(value: ScoreInput | undefined): number | null {
   return num;
 }
 
-export function calcFinalScore(scores: readonly ScoreInput[] | undefined): string | null {
-  if (!scores || scores.length !== CRITERIA.length) return null;
+export function calcFinalScore(
+  scores: readonly ScoreInput[] | undefined,
+  activityType: ActivityType = 'projeto'
+): string | null {
+  const criteria = getCriteriaForActivity(activityType);
+  if (!scores || scores.length !== criteria.length) return null;
   let total = 0;
-  for (let i = 0; i < CRITERIA.length; i += 1) {
+  for (let i = 0; i < criteria.length; i += 1) {
     const parsed = parseScore(scores[i]);
     if (parsed === null) return null;
-    total += parsed * CRITERIA[i].weight;
+    total += parsed * criteria[i].weight;
   }
   return total.toFixed(2);
 }
 
-export function calcPartialWeighted(scores: readonly ScoreInput[] | undefined): number {
+export function calcPartialWeighted(
+  scores: readonly ScoreInput[] | undefined,
+  activityType: ActivityType = 'projeto'
+): number {
+  const criteria = getCriteriaForActivity(activityType);
   if (!scores) return 0;
   let total = 0;
-  for (let i = 0; i < CRITERIA.length; i += 1) {
+  for (let i = 0; i < criteria.length; i += 1) {
     const parsed = parseScore(scores[i]);
     if (parsed !== null) {
-      total += parsed * CRITERIA[i].weight;
+      total += parsed * criteria[i].weight;
     }
   }
   return Number(total.toFixed(2));
@@ -198,15 +362,3 @@ export function sanitizeFeedbackHtml(rawHtml: string): string {
   cleaned = cleaned.trim();
   return cleaned;
 }
-
-export const FEEDBACK_TEMPLATE_HTML =
-  '<p>Olá,</p>' +
-  '<p>O Projeto de Intervenção apresentado demonstra uma boa compreensão da atividade proposta.</p>' +
-  '<p><strong>Pontos Fortes</strong></p>' +
-  '<ul><li><strong>Pertinência e Contexto:</strong> Identifica claramente a necessidade educativa.</li>' +
-  '<li><strong>Integração da IA:</strong> Ferramentas bem articuladas com o objetivo.</li></ul>' +
-  '<p><strong>Aspetos a Melhorar</strong></p>' +
-  '<ul><li>Detalhar como os utilizadores finais irão aplicar o recurso no terreno.</li></ul>' +
-  '<p><strong>Recomendações</strong></p>' +
-  '<ul><li>Incluir exemplos práticos de prompts ou fluxos de validação.</li></ul>' +
-  '<p>Estou disponível para qualquer esclarecimento adicional.<br>A formadora, Carla Oliveira</p>';

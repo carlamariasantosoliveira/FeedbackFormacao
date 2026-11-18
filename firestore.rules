@@ -62,6 +62,11 @@ service cloud.firestore {
         data.createdAt is timestamp;
     }
 
+    function isValidActivityType(data) {
+      return !('activityType' in data.keys()) ||
+        (data.activityType is string && data.activityType in ['projeto', 'cenario']);
+    }
+
     function isValidStudent(data, workspaceKey) {
       return data.keys().hasAll([
           'name',
@@ -87,7 +92,8 @@ service cloud.firestore {
           'nota',
           'workspaceKey',
           'createdAt',
-          'updatedAt'
+          'updatedAt',
+          'activityType'
         ]) &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
         data.projectTitle is string && data.projectTitle.size() <= 200 &&
@@ -100,7 +106,8 @@ service cloud.firestore {
         isValidHash(data.workspaceKey) &&
         data.workspaceKey == workspaceKey &&
         data.createdAt is timestamp &&
-        data.updatedAt is timestamp;
+        data.updatedAt is timestamp &&
+        isValidActivityType(data);
     }
 
     function isValidPublicFeedback(data) {
@@ -124,7 +131,8 @@ service cloud.firestore {
           'feedback',
           'criterios',
           'nota',
-          'updatedAt'
+          'updatedAt',
+          'activityType'
         ]) &&
         isValidId(data.studentId) &&
         isValidHash(data.workspaceKey) &&
@@ -134,7 +142,8 @@ service cloud.firestore {
         data.feedback is string && data.feedback.size() <= 50000 &&
         isValidCriteriaList(data.criterios) &&
         data.nota is string && data.nota.size() <= 16 &&
-        data.updatedAt is timestamp;
+        data.updatedAt is timestamp &&
+        isValidActivityType(data);
     }
 
     // ---- /system/{docId} ----
@@ -188,6 +197,7 @@ service cloud.firestore {
           isValidStudent(incoming(), workspaceKey) &&
           incoming().workspaceKey == existing().workspaceKey &&
           incoming().createdAt == existing().createdAt &&
+          (!('activityType' in existing().keys()) || (('activityType' in incoming().keys()) && incoming().activityType == existing().activityType)) &&
           incoming().updatedAt == request.time &&
           incoming().diff(existing()).affectedKeys().hasOnly([
             'name',
@@ -198,6 +208,7 @@ service cloud.firestore {
             'feedback',
             'criterios',
             'nota',
+            'activityType',
             'updatedAt'
           ]) &&
           exists(/databases/$(database)/documents/workspaces/$(workspaceKey)) &&
@@ -220,6 +231,7 @@ service cloud.firestore {
         isValidPublicFeedback(incoming()) &&
         incoming().studentId == existing().studentId &&
         incoming().workspaceKey == existing().workspaceKey &&
+        (!('activityType' in existing().keys()) || (('activityType' in incoming().keys()) && incoming().activityType == existing().activityType)) &&
         incoming().updatedAt == request.time &&
         incoming().diff(existing()).affectedKeys().hasOnly([
           'name',
@@ -228,6 +240,7 @@ service cloud.firestore {
           'feedback',
           'criterios',
           'nota',
+          'activityType',
           'updatedAt'
         ]) &&
         exists(/databases/$(database)/documents/workspaces/$(incoming().workspaceKey)/students/$(incoming().studentId));

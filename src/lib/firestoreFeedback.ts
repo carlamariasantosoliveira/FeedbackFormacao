@@ -10,7 +10,7 @@ import {
   writeBatch,
   type Unsubscribe,
 } from 'firebase/firestore';
-import type { ScoreInput, StudentPublicRecord, StudentRecord } from '../types.ts';
+import type { ActivityType, ScoreInput, StudentPublicRecord, StudentRecord } from '../types.ts';
 import { OperationType, db, handleFirestoreError } from './firebase.ts';
 import {
   BLUEPRINT_LIMITS,
@@ -19,11 +19,13 @@ import {
   generateRandomHexKey,
   hashStudentPassword,
   hashTeacherPassword,
+  normalizeActivityType,
   normalizeCriteriaForFirestore,
 } from './feedbackHelpers.ts';
 import {
   calcFinalScore,
   generateStudentPassword,
+  getCriteriaForActivity,
   sanitizeFeedbackHtml,
 } from './rubric.ts';
 
@@ -86,15 +88,17 @@ function formatTimestampIso(ts: unknown): string {
 }
 
 function mapStudentDoc(id: string, data: Record<string, unknown>): StudentRecord {
+  const activityType = normalizeActivityType(data.activityType);
   return {
     id,
+    activityType,
     name: typeof data.name === 'string' ? data.name : '',
     projectTitle: typeof data.projectTitle === 'string' ? data.projectTitle : '',
     targetAudience: typeof data.targetAudience === 'string' ? data.targetAudience : '',
     password: typeof data.password === 'string' ? data.password : '',
     accessHash: typeof data.accessHash === 'string' ? data.accessHash : undefined,
     feedback: typeof data.feedback === 'string' ? data.feedback : '',
-    criterios: fromFirestoreCriteria(data.criterios),
+    criterios: fromFirestoreCriteria(data.criterios, activityType),
     nota: typeof data.nota === 'string' ? data.nota : '',
     updatedAt: formatTimestampIso(data.updatedAt),
   };
@@ -111,6 +115,7 @@ function generateValidStudentId(): string {
 
 const INITIAL_SEED_STUDENTS: Array<{
   id: string;
+  activityType: ActivityType;
   name: string;
   projectTitle: string;
   targetAudience: string;
@@ -120,6 +125,7 @@ const INITIAL_SEED_STUDENTS: Array<{
 }> = [
   {
     id: 'seed-1',
+    activityType: 'projeto',
     name: 'Ana Ferreira',
     projectTitle: 'Assistente Documental para a Direção Escolar',
     targetAudience: 'Direção e Serviços Administrativos',
@@ -139,6 +145,7 @@ const INITIAL_SEED_STUDENTS: Array<{
   },
   {
     id: 'seed-2',
+    activityType: 'projeto',
     name: 'Miguel Costa',
     projectTitle: 'Biblioteca Digital Inteligente e Guias de Leitura',
     targetAudience: 'Equipa da Biblioteca Escolar e Departamentos',
@@ -156,10 +163,37 @@ const INITIAL_SEED_STUDENTS: Array<{
   },
   {
     id: 'seed-3',
+    activityType: 'projeto',
     name: 'Sofia Ribeiro',
     projectTitle: 'Canal de Comunicação Multilingue Escola–Famílias',
     targetAudience: 'Famílias e Equipas Educativas',
     password: 'Rio51',
+    feedback: '',
+    criterios: [],
+  },
+  {
+    id: 'seed-cenario-1',
+    activityType: 'cenario',
+    name: 'Beatriz Almeida',
+    projectTitle: 'Análise Crítica de Fontes Históricas com Apoio da IA',
+    targetAudience: 'História · 8.º Ano',
+    password: 'Verde42',
+    feedback:
+      '<p>Olá, Beatriz Almeida,</p>' +
+      '<p>O Cenário de Aprendizagem apresentado está muito bem estruturado, com excelente articulação entre os objetivos, a metodologia ativa e a utilização crítica da IA pelos alunos.</p>' +
+      '<p><strong>Pontos Fortes</strong></p>' +
+      '<ul><li><strong>Enquadramento e Metodologia:</strong> Todos os dados curriculares estão completos e a aprendizagem baseada em problemas está claramente definida.</li>' +
+      '<li><strong>Sequência Pedagógica:</strong> Os momentos da aula, tempos e papel mediador da professora garantem a exequibilidade na turma.</li></ul>' +
+      '<p>Continuação de um ótimo trabalho!<br>A formadora, Carla Oliveira</p>',
+    criterios: [10, 9.5, 10, 9, 9.5],
+  },
+  {
+    id: 'seed-cenario-2',
+    activityType: 'cenario',
+    name: 'Diogo Martins',
+    projectTitle: 'Exploração dos Ecossistemas Locais com Guiões Digitais',
+    targetAudience: 'Ciências Naturais · 5.º Ano',
+    password: 'Luna73',
     feedback: '',
     criterios: [],
   },
@@ -175,7 +209,7 @@ async function bootstrapDefaultWorkspace(): Promise<TeacherSession> {
     createdAt: serverTimestamp(),
   });
   batch.set(doc(db, 'workspaces', workspaceKey), {
-    name: 'Projeto de Intervenção',
+    name: 'Avaliação de Trabalhos IA',
     createdAt: serverTimestamp(),
   });
   batch.set(doc(db, 'teacherAccess', teacherHash), {
@@ -185,10 +219,11 @@ async function bootstrapDefaultWorkspace(): Promise<TeacherSession> {
 
   for (const s of INITIAL_SEED_STUDENTS) {
     const accessHash = await hashStudentPassword(s.password);
-    const criterios = normalizeCriteriaForFirestore(s.criterios);
-    const nota = calcFinalScore(s.criterios) ?? '';
+    const criterios = normalizeCriteriaForFirestore(s.criterios, s.activityType);
+    const nota = calcFinalScore(s.criterios, s.activityType) ?? '';
 
     batch.set(doc(db, 'workspaces', workspaceKey, 'students', s.id), {
+      activityType: s.activityType,
       name: s.name,
       projectTitle: s.projectTitle,
       targetAudience: s.targetAudience,
@@ -205,6 +240,7 @@ async function bootstrapDefaultWorkspace(): Promise<TeacherSession> {
     batch.set(doc(db, 'publicFeedbacks', accessHash), {
       studentId: s.id,
       workspaceKey,
+      activityType: s.activityType,
       name: s.name,
       projectTitle: s.projectTitle,
       targetAudience: s.targetAudience,
@@ -357,12 +393,14 @@ export async function createStudentInFirestore(
   workspaceKey: string,
   existingStudents: readonly StudentRecord[],
   payload: {
+    activityType: ActivityType;
     name: string;
     password?: string;
     projectTitle?: string;
     targetAudience?: string;
   }
 ): Promise<StudentRecord> {
+  const activityType = normalizeActivityType(payload.activityType);
   const name = clampString(payload.name, BLUEPRINT_LIMITS.NAME_MAX);
   if (name.length < BLUEPRINT_LIMITS.NAME_MIN) {
     throw new Error('O nome do formando é obrigatório.');
@@ -391,7 +429,7 @@ export async function createStudentInFirestore(
       (s) => s.password.trim().toLowerCase() === password.toLowerCase()
     );
     if (duplicate) {
-      throw new Error('Essa password já está atribuída a outro formando. Escolhe outra.');
+      throw new Error('Essa password já está atribuída a outro trabalho/formando. Escolhe outra.');
     }
   }
 
@@ -402,13 +440,14 @@ export async function createStudentInFirestore(
   );
   const studentId = generateValidStudentId();
   const accessHash = await hashStudentPassword(password);
-  const criterios = normalizeCriteriaForFirestore([]);
+  const criterios = normalizeCriteriaForFirestore([], activityType);
 
   const studentRef = doc(db, 'workspaces', workspaceKey, 'students', studentId);
   const publicRef = doc(db, 'publicFeedbacks', accessHash);
 
   const batch = writeBatch(db);
   batch.set(studentRef, {
+    activityType,
     name,
     projectTitle,
     targetAudience,
@@ -424,6 +463,7 @@ export async function createStudentInFirestore(
   batch.set(publicRef, {
     studentId,
     workspaceKey,
+    activityType,
     name,
     projectTitle,
     targetAudience,
@@ -441,13 +481,14 @@ export async function createStudentInFirestore(
 
   return {
     id: studentId,
+    activityType,
     name,
     projectTitle,
     targetAudience,
     password,
     accessHash,
     feedback: '',
-    criterios: ['', '', '', '', '', ''],
+    criterios: getCriteriaForActivity(activityType).map(() => ''),
     nota: '',
     updatedAt: new Date().toISOString(),
   };
@@ -463,6 +504,7 @@ export async function saveStudentFeedbackInFirestore(
     criterios: ScoreInput[];
   }
 ): Promise<StudentRecord> {
+  const activityType = normalizeActivityType(existingStudent.activityType);
   const projectTitle = clampString(payload.projectTitle, BLUEPRINT_LIMITS.PROJECT_TITLE_MAX);
   const targetAudience = clampString(
     payload.targetAudience,
@@ -474,8 +516,11 @@ export async function saveStudentFeedbackInFirestore(
       ? sanitizedHtml.slice(0, BLUEPRINT_LIMITS.FEEDBACK_MAX)
       : sanitizedHtml;
 
-  const criterios = normalizeCriteriaForFirestore(payload.criterios);
-  const nota = clampString(calcFinalScore(payload.criterios) ?? '', BLUEPRINT_LIMITS.NOTA_MAX);
+  const criterios = normalizeCriteriaForFirestore(payload.criterios, activityType);
+  const nota = clampString(
+    calcFinalScore(payload.criterios, activityType) ?? '',
+    BLUEPRINT_LIMITS.NOTA_MAX
+  );
   const accessHash =
     existingStudent.accessHash || (await hashStudentPassword(existingStudent.password));
 
@@ -484,6 +529,7 @@ export async function saveStudentFeedbackInFirestore(
 
   const batch = writeBatch(db);
   batch.update(studentRef, {
+    activityType,
     projectTitle,
     targetAudience,
     feedback,
@@ -492,6 +538,7 @@ export async function saveStudentFeedbackInFirestore(
     updatedAt: serverTimestamp(),
   });
   batch.update(publicRef, {
+    activityType,
     projectTitle,
     targetAudience,
     feedback,
@@ -512,11 +559,12 @@ export async function saveStudentFeedbackInFirestore(
 
   return {
     ...existingStudent,
+    activityType,
     accessHash,
     projectTitle,
     targetAudience,
     feedback,
-    criterios: fromFirestoreCriteria(criterios),
+    criterios: fromFirestoreCriteria(criterios, activityType),
     nota,
     updatedAt: new Date().toISOString(),
   };
@@ -587,13 +635,15 @@ export async function lookupStudentFeedbackByPassword(
   }
 
   const data = snap.data() as Record<string, unknown>;
+  const activityType = normalizeActivityType(data.activityType);
   return {
     id: typeof data.studentId === 'string' ? data.studentId : snap.id,
+    activityType,
     name: typeof data.name === 'string' ? data.name : '',
     projectTitle: typeof data.projectTitle === 'string' ? data.projectTitle : '',
     targetAudience: typeof data.targetAudience === 'string' ? data.targetAudience : '',
     feedback: typeof data.feedback === 'string' ? data.feedback : '',
-    criterios: fromFirestoreCriteria(data.criterios),
+    criterios: fromFirestoreCriteria(data.criterios, activityType),
     nota: typeof data.nota === 'string' ? data.nota : '',
     updatedAt: formatTimestampIso(data.updatedAt),
   };

@@ -120,6 +120,11 @@
           "type": "string",
           "format": "date-time",
           "description": "Server last-update timestamp."
+        },
+        "activityType": {
+          "type": "string",
+          "enum": ["projeto", "cenario"],
+          "description": "Evaluation work area: Projeto de Intervenção or Cenário de Aprendizagem com a IA."
         }
       },
       "required": [
@@ -164,12 +169,12 @@
         "projectTitle": {
           "type": "string",
           "maxLength": 200,
-          "description": "Intervention project title."
+          "description": "Intervention project or learning scenario title."
         },
         "targetAudience": {
           "type": "string",
           "maxLength": 200,
-          "description": "Target audience."
+          "description": "Target audience or subject/grade level."
         },
         "feedback": {
           "type": "string",
@@ -178,7 +183,7 @@
         },
         "criterios": {
           "type": "array",
-          "description": "6 numeric rubric scores (0 to 10) or null."
+          "description": "5 or 6 numeric rubric scores (0 to 10) or null depending on activityType."
         },
         "nota": {
           "type": "string",
@@ -189,6 +194,11 @@
           "type": "string",
           "format": "date-time",
           "description": "Server timestamp of latest update."
+        },
+        "activityType": {
+          "type": "string",
+          "enum": ["projeto", "cenario"],
+          "description": "Evaluation work area: Projeto de Intervenção or Cenário de Aprendizagem com a IA."
         }
       },
       "required": [

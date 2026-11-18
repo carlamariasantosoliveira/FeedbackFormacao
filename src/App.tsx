@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { ScoreInput, StudentPublicRecord, StudentRecord } from './types.ts';
+import { useEffect, useRef, useState } from 'react';
+import type { ActivityType, ScoreInput, StudentPublicRecord, StudentRecord } from './types.ts';
 import {
   type TeacherSession,
   changeTeacherPasswordInFirestore,
@@ -28,12 +28,16 @@ type ActiveScreen =
 export default function App() {
   const [screen, setScreen] = useState<ActiveScreen>('home');
   const [teacherSession, setTeacherSession] = useState<TeacherSession | null>(null);
+  const [activeActivity, setActiveActivity] = useState<ActivityType>('projeto');
+  const activeActivityRef = useRef<ActivityType>(activeActivity);
+  activeActivityRef.current = activeActivity;
   const [students, setStudents] = useState<StudentRecord[]>([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeStudent, setActiveStudent] = useState<StudentPublicRecord | null>(null);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [rubricOpen, setRubricOpen] = useState(false);
+  const [rubricActivity, setRubricActivity] = useState<ActivityType>('projeto');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [asyncError, setAsyncError] = useState<Error | null>(null);
 
@@ -43,6 +47,11 @@ export default function App() {
 
   function showToast(msg: string) {
     setToastMsg(msg);
+  }
+
+  function openRubric(activity: ActivityType) {
+    setRubricActivity(activity);
+    setRubricOpen(true);
   }
 
   useEffect(() => {
@@ -64,8 +73,9 @@ export default function App() {
         setStudents(list);
         setStudentsLoading(false);
         setSelectedId((prev) => {
-          if (prev && list.some((s) => s.id === prev)) return prev;
-          return list[0]?.id ?? null;
+          const areaList = list.filter((s) => s.activityType === activeActivityRef.current);
+          if (prev && areaList.some((s) => s.id === prev)) return prev;
+          return areaList[0]?.id ?? null;
         });
       },
       (err) => {
@@ -76,6 +86,12 @@ export default function App() {
 
     return () => unsubscribe();
   }, [teacherSession, screen, isPreviewMode]);
+
+  function handleChangeActivity(nextActivity: ActivityType) {
+    setActiveActivity(nextActivity);
+    const firstInArea = students.find((s) => s.activityType === nextActivity);
+    setSelectedId(firstInArea?.id ?? null);
+  }
 
   async function handleOpenTeacherFlow() {
     const existingSession = await restoreTeacherSession();
@@ -107,6 +123,7 @@ export default function App() {
   }
 
   async function handleAddStudent(payload: {
+    activityType: ActivityType;
     name: string;
     password?: string;
     projectTitle?: string;
@@ -158,7 +175,7 @@ export default function App() {
         <HomeScreen
           onSelectTeacher={handleOpenTeacherFlow}
           onSelectStudent={() => setScreen('student-login')}
-          onOpenRubric={() => setRubricOpen(true)}
+          onOpenRubric={openRubric}
         />
       )}
 
@@ -182,6 +199,8 @@ export default function App() {
         <TeacherPanel
           students={students}
           loading={studentsLoading}
+          activeActivity={activeActivity}
+          onChangeActivity={handleChangeActivity}
           selectedId={selectedId}
           onSelectStudent={(id) => setSelectedId(id)}
           onAddStudent={handleAddStudent}
@@ -192,7 +211,7 @@ export default function App() {
             setIsPreviewMode(true);
             setScreen('student-view');
           }}
-          onOpenRubric={() => setRubricOpen(true)}
+          onOpenRubric={openRubric}
           onChangeTeacherPassword={handleChangeTeacherPassword}
           onLogout={handleLogout}
           onToast={showToast}
@@ -207,12 +226,16 @@ export default function App() {
             setIsPreviewMode(false);
             setScreen('teacher-panel');
           }}
-          onOpenRubric={() => setRubricOpen(true)}
+          onOpenRubric={openRubric}
           onLogout={handleLogout}
         />
       )}
 
-      <RubricModal open={rubricOpen} onClose={() => setRubricOpen(false)} />
+      <RubricModal
+        open={rubricOpen}
+        initialActivity={rubricActivity}
+        onClose={() => setRubricOpen(false)}
+      />
 
       {toastMsg && (
         <div

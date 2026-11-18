@@ -18,13 +18,14 @@ import {
   Trash2,
   UserCheck,
 } from 'lucide-react';
-import type { ScoreInput, StudentRecord } from '../types.ts';
+import type { ActivityType, ScoreInput, StudentRecord } from '../types.ts';
 import {
-  CRITERIA,
-  FEEDBACK_TEMPLATE_HTML,
+  ACTIVITIES,
+  ACTIVITY_ORDER,
   PERFORMANCE_LEVELS,
   calcFinalScore,
   calcPartialWeighted,
+  getActivityConfig,
   getInitials,
   getPerformanceLevel,
   parseScore,
@@ -37,9 +38,12 @@ import { ConfirmModal } from './ConfirmModal.tsx';
 interface TeacherPanelProps {
   students: StudentRecord[];
   loading?: boolean;
+  activeActivity: ActivityType;
+  onChangeActivity: (activity: ActivityType) => void;
   selectedId: string | null;
   onSelectStudent: (id: string) => void;
   onAddStudent: (payload: {
+    activityType: ActivityType;
     name: string;
     password?: string;
     projectTitle?: string;
@@ -56,7 +60,7 @@ interface TeacherPanelProps {
   ) => Promise<StudentRecord>;
   onDeleteStudent: (id: string) => Promise<void>;
   onPreviewStudent: (student: StudentRecord) => void;
-  onOpenRubric: () => void;
+  onOpenRubric: (activity: ActivityType) => void;
   onChangeTeacherPassword: (currentPwd: string, newPwd: string) => Promise<void>;
   onLogout: () => void;
   onToast: (msg: string) => void;
@@ -67,6 +71,8 @@ type FilterTab = 'all' | 'done' | 'pending';
 export function TeacherPanel({
   students,
   loading = false,
+  activeActivity,
+  onChangeActivity,
   selectedId,
   onSelectStudent,
   onAddStudent,
@@ -89,21 +95,48 @@ export function TeacherPanel({
   const [dirty, setDirty] = useState(false);
   const [expandedCritId, setExpandedCritId] = useState<string | null>(null);
 
+  const activityConfig = getActivityConfig(activeActivity);
+  const criteria = activityConfig.criteria;
+
+  const countsByActivity = useMemo(
+    () => ({
+      projeto: students.filter((s) => s.activityType === 'projeto').length,
+      cenario: students.filter((s) => s.activityType === 'cenario').length,
+    }),
+    [students]
+  );
+
+  const areaStudents = useMemo(
+    () => students.filter((s) => s.activityType === activeActivity),
+    [students, activeActivity]
+  );
+
   const selectedStudent = useMemo(
-    () => students.find((s) => s.id === selectedId) || null,
-    [students, selectedId]
+    () => areaStudents.find((s) => s.id === selectedId) || null,
+    [areaStudents, selectedId]
   );
 
   const [projectTitle, setProjectTitle] = useState('');
   const [targetAudience, setTargetAudience] = useState('');
-  const [scores, setScores] = useState<ScoreInput[]>(['', '', '', '', '', '']);
+  const [scores, setScores] = useState<ScoreInput[]>(() => criteria.map(() => ''));
   const editorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!selectedStudent) return;
+    setExpandedCritId(null);
+    if (!selectedStudent) {
+      setProjectTitle('');
+      setTargetAudience('');
+      setScores(criteria.map(() => ''));
+      if (editorRef.current) {
+        editorRef.current.innerHTML = '';
+      }
+      setDirty(false);
+      setCopiedPwd(false);
+      return;
+    }
     setProjectTitle(selectedStudent.projectTitle || '');
     setTargetAudience(selectedStudent.targetAudience || '');
-    const nextScores: ScoreInput[] = CRITERIA.map((_, idx) => {
+    const nextScores: ScoreInput[] = criteria.map((_, idx) => {
       const val = selectedStudent.criterios?.[idx];
       return val === undefined || val === null ? '' : val;
     });
@@ -113,11 +146,11 @@ export function TeacherPanel({
     }
     setDirty(false);
     setCopiedPwd(false);
-  }, [selectedStudent?.id]);
+  }, [selectedStudent?.id, activeActivity, criteria]);
 
   const filteredStudents = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return students.filter((s) => {
+    return areaStudents.filter((s) => {
       const hasFeedback = Boolean(s.feedback || s.nota);
       if (filter === 'done' && !hasFeedback) return false;
       if (filter === 'pending' && hasFeedback) return false;
@@ -125,19 +158,26 @@ export function TeacherPanel({
       return (
         s.name.toLowerCase().includes(q) ||
         s.projectTitle.toLowerCase().includes(q) ||
+        s.targetAudience.toLowerCase().includes(q) ||
         s.password.toLowerCase().includes(q)
       );
     });
-  }, [students, search, filter]);
+  }, [areaStudents, search, filter]);
 
   const stats = useMemo(() => {
-    const total = students.length;
-    const done = students.filter((s) => Boolean(s.feedback || s.nota)).length;
+    const total = areaStudents.length;
+    const done = areaStudents.filter((s) => Boolean(s.feedback || s.nota)).length;
     return { total, done, pending: total - done };
-  }, [students]);
+  }, [areaStudents]);
 
-  const finalScore = useMemo(() => calcFinalScore(scores), [scores]);
-  const partialScore = useMemo(() => calcPartialWeighted(scores), [scores]);
+  const finalScore = useMemo(
+    () => calcFinalScore(scores, activeActivity),
+    [scores, activeActivity]
+  );
+  const partialScore = useMemo(
+    () => calcPartialWeighted(scores, activeActivity),
+    [scores, activeActivity]
+  );
   const filledCount = useMemo(
     () => scores.filter((v) => parseScore(v) !== null).length,
     [scores]
@@ -154,9 +194,9 @@ export function TeacherPanel({
     if (!editorRef.current) return;
     const currentText = editorRef.current.innerText.trim();
     if (!currentText) {
-      editorRef.current.innerHTML = FEEDBACK_TEMPLATE_HTML;
+      editorRef.current.innerHTML = activityConfig.templateHtml;
     } else {
-      editorRef.current.innerHTML = `${editorRef.current.innerHTML}<br>${FEEDBACK_TEMPLATE_HTML}`;
+      editorRef.current.innerHTML = `${editorRef.current.innerHTML}<br>${activityConfig.templateHtml}`;
     }
     setDirty(true);
     onToast('Estrutura de feedback inserida.');
@@ -230,18 +270,18 @@ export function TeacherPanel({
   function handleExportCsv() {
     const headers = [
       'Nome',
-      'Projeto',
-      'Público-Alvo',
+      activityConfig.titleFieldLabel,
+      activityConfig.audienceShortLabel,
       'Password',
-      ...CRITERIA.map((c) => `${c.number}. ${c.name} (${c.weightPercent}%)`),
+      ...criteria.map((c) => `${c.number}. ${c.name} (${c.weightPercent}%)`),
       'Nota Final (0-10)',
     ];
-    const rows = students.map((s) => [
+    const rows = areaStudents.map((s) => [
       s.name,
       s.projectTitle,
       s.targetAudience,
       s.password,
-      ...CRITERIA.map((_, i) => (s.criterios?.[i] ?? '').toString()),
+      ...criteria.map((_, i) => (s.criterios?.[i] ?? '').toString()),
       s.nota || '',
     ]);
     const csvContent = [headers, ...rows]
@@ -254,7 +294,7 @@ export function TeacherPanel({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `avaliacoes-projeto-intervencao-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `avaliacoes-${activityConfig.csvSlug}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     onToast('Ficheiro CSV exportado.');
@@ -285,7 +325,7 @@ export function TeacherPanel({
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
           <button
             type="button"
-            onClick={onOpenRubric}
+            onClick={() => onOpenRubric(activeActivity)}
             className="inline-flex items-center gap-1.5 hover:text-[#1a1a2e] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <BookOpen className="h-4 w-4" aria-hidden="true" />
@@ -312,7 +352,7 @@ export function TeacherPanel({
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <button
             type="button"
-            onClick={onOpenRubric}
+            onClick={() => onOpenRubric(activeActivity)}
             aria-label="Ver critérios de avaliação"
             title="Critérios"
             className="md:hidden p-2 text-slate-600 hover:text-[#1a1a2e] border border-slate-200 rounded-lg cursor-pointer"
@@ -348,6 +388,55 @@ export function TeacherPanel({
         </div>
       </header>
 
+      {/* Two Work Areas Bar */}
+      <div className="border-b border-slate-200 bg-[#f8faff] px-4 sm:px-8 py-3">
+        <div
+          role="tablist"
+          aria-label="Áreas de avaliação"
+          className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-w-4xl"
+        >
+          {ACTIVITY_ORDER.map((actId, idx) => {
+            const cfg = ACTIVITIES[actId];
+            const active = activeActivity === actId;
+            const count = countsByActivity[actId];
+            return (
+              <button
+                key={actId}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => {
+                  if (actId !== activeActivity) {
+                    setSearch('');
+                    setFilter('all');
+                    onChangeActivity(actId);
+                  }
+                }}
+                className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                  active
+                    ? 'bg-white border-[#2563eb] text-[#1a1a2e] shadow-xs ring-1 ring-[#2563eb]/20'
+                    : 'bg-white/60 border-slate-200 text-slate-600 hover:bg-white hover:text-[#1a1a2e]'
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[#2563eb]">
+                    Área {idx + 1} · {cfg.criteria.length} critérios
+                  </div>
+                  <div className="text-sm font-bold truncate">{cfg.activityTitle}</div>
+                </div>
+                <span
+                  className={`font-mono text-xs font-semibold px-2.5 py-1 rounded-lg tabular-nums shrink-0 ${
+                    active ? 'bg-[#f0f4ff] text-[#1e40af]' : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[324px_1fr]">
         {/* Sidebar */}
         <aside className="border-b lg:border-b-0 lg:border-r border-slate-200 bg-[#fafbff] p-4 sm:p-5 flex flex-col gap-3">
@@ -368,7 +457,7 @@ export function TeacherPanel({
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Procurar formando ou projeto..."
+              placeholder={`Procurar em ${activityConfig.shortLabel}...`}
               aria-label="Procurar formando"
               className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:border-[#2563eb]"
             />
@@ -410,15 +499,15 @@ export function TeacherPanel({
             </button>
           </div>
 
-          <div className="space-y-1 max-h-[260px] lg:max-h-[calc(100vh-310px)] overflow-y-auto pr-0.5">
+          <div className="space-y-1 max-h-[260px] lg:max-h-[calc(100vh-370px)] overflow-y-auto pr-0.5">
             {loading && students.length === 0 ? (
               <p className="text-xs text-slate-500 px-2 py-4 text-center leading-relaxed">
                 A sincronizar formandos na nuvem...
               </p>
             ) : filteredStudents.length === 0 ? (
               <p className="text-xs text-slate-500 px-2 py-4 text-center leading-relaxed">
-                {students.length === 0
-                  ? 'Ainda não existem formandos. Adiciona o primeiro abaixo.'
+                {areaStudents.length === 0
+                  ? `Ainda não existem formandos em ${activityConfig.shortLabel}. Adiciona o primeiro abaixo.`
                   : 'Nenhum formando corresponde ao filtro.'}
               </p>
             ) : (
@@ -475,16 +564,30 @@ export function TeacherPanel({
         {/* Main Workspace */}
         <main className="p-5 sm:p-8 lg:p-10 overflow-y-auto bg-white">
           {!selectedStudent ? (
-            <div className="h-full min-h-[380px] flex flex-col items-center justify-center text-center text-slate-500 max-w-sm mx-auto">
+            <div className="h-full min-h-[380px] flex flex-col items-center justify-center text-center text-slate-500 max-w-md mx-auto">
               <div className="h-14 w-14 rounded-2xl bg-[#f0f4ff] text-[#2563eb] flex items-center justify-center mb-4">
                 <UserCheck className="h-7 w-7" aria-hidden="true" />
               </div>
               <h2 className="font-display text-xl font-bold text-[#1a1a2e] mb-2">
-                Seleciona um formando
+                {areaStudents.length === 0
+                  ? `Área: ${activityConfig.activityTitle}`
+                  : 'Seleciona um formando'}
               </h2>
-              <p className="text-sm leading-relaxed">
-                Escolhe um formando na lista à esquerda para escrever o feedback individualizado e preencher os critérios do Projeto de Intervenção.
+              <p className="text-sm leading-relaxed mb-5">
+                {areaStudents.length === 0
+                  ? `Ainda não existem trabalhos registados em ${activityConfig.activityTitle}. Adiciona o primeiro formando para iniciar a avaliação com os ${criteria.length} critérios desta atividade.`
+                  : `Escolhe um formando na lista à esquerda para escrever o feedback individualizado e preencher os ${criteria.length} critérios de ${activityConfig.activityTitle}.`}
               </p>
+              {areaStudents.length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => setAddModalOpen(true)}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-[#1a1a2e] rounded-xl hover:bg-[#2d2d4a] transition-colors cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  <span>Adicionar Formando em {activityConfig.shortLabel}</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="max-w-4xl space-y-6">
@@ -541,14 +644,14 @@ export function TeacherPanel({
                 </div>
               </div>
 
-              {/* Project Identification Metadata */}
+              {/* Project / Scenario Identification Metadata */}
               <section className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#fafbff] border border-slate-200 rounded-2xl p-5">
                 <div>
                   <label
                     htmlFor="edit-project-title"
                     className="block text-xs font-medium text-slate-600 mb-1.5"
                   >
-                    Nome do Projeto de Intervenção
+                    {activityConfig.titleFieldLabel}
                   </label>
                   <input
                     id="edit-project-title"
@@ -558,7 +661,7 @@ export function TeacherPanel({
                       setProjectTitle(e.target.value);
                       setDirty(true);
                     }}
-                    placeholder="Ex: Assistente Documental para a Direção"
+                    placeholder={activityConfig.titlePlaceholder}
                     className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-xl outline-none focus:border-[#2563eb]"
                   />
                 </div>
@@ -567,7 +670,7 @@ export function TeacherPanel({
                     htmlFor="edit-target-audience"
                     className="block text-xs font-medium text-slate-600 mb-1.5"
                   >
-                    Público-Alvo / Contexto de Intervenção
+                    {activityConfig.audienceFieldLabel}
                   </label>
                   <input
                     id="edit-target-audience"
@@ -577,7 +680,7 @@ export function TeacherPanel({
                       setTargetAudience(e.target.value);
                       setDirty(true);
                     }}
-                    placeholder="Ex: Direção, Departamentos, Biblioteca, Famílias"
+                    placeholder={activityConfig.audiencePlaceholder}
                     className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-xl outline-none focus:border-[#2563eb]"
                   />
                 </div>
@@ -640,7 +743,7 @@ export function TeacherPanel({
                   aria-label="Comentários de feedback"
                   contentEditable
                   suppressContentEditableWarning
-                  data-placeholder="Escreve aqui o feedback detalhado sobre o Projeto de Intervenção..."
+                  data-placeholder={activityConfig.feedbackPlaceholder}
                   onInput={() => setDirty(true)}
                   className="rich-editor min-h-[180px] px-4 py-3.5 border border-slate-200 rounded-b-xl text-[0.95rem] leading-relaxed text-[#1a1a2e] bg-white outline-none focus:border-[#2563eb] feedback-prose"
                 />
@@ -651,15 +754,15 @@ export function TeacherPanel({
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <div>
                     <h2 className="font-sans text-base font-semibold text-[#1a1a2e]">
-                      Avaliação por Critérios — Projeto de Intervenção
+                      Avaliação por Critérios — {activityConfig.activityTitle}
                     </h2>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Classificação de 0 a 10 valores · {filledCount}/6 critérios preenchidos
+                      Classificação de 0 a 10 valores · {filledCount}/{criteria.length} critérios preenchidos
                     </p>
                   </div>
                   <button
                     type="button"
-                    onClick={onOpenRubric}
+                    onClick={() => onOpenRubric(activeActivity)}
                     className="text-xs font-medium text-[#2563eb] hover:underline cursor-pointer"
                   >
                     Ver matriz completa
@@ -667,7 +770,7 @@ export function TeacherPanel({
                 </div>
 
                 <div className="divide-y divide-slate-200 border border-slate-200 rounded-xl overflow-hidden">
-                  {CRITERIA.map((criterion, index) => {
+                  {criteria.map((criterion, index) => {
                     const scoreVal = parseScore(scores[index]);
                     const activeLevel =
                       scoreVal !== null ? getPerformanceLevel(scoreVal) : null;
@@ -793,7 +896,7 @@ export function TeacherPanel({
                     <div className="text-xs text-slate-600">
                       {finalScore !== null
                         ? `Nível global: ${getPerformanceLevel(Number(finalScore)).label}`
-                        : `Soma parcial atual: ${partialScore.toFixed(2)} / 10 (preenche os 6 critérios para concluir)`}
+                        : `Soma parcial atual: ${partialScore.toFixed(2)} / 10 (preenche os ${criteria.length} critérios para concluir)`}
                     </div>
                   </div>
                   <div
@@ -844,6 +947,7 @@ export function TeacherPanel({
 
       <AddStudentModal
         open={addModalOpen}
+        activityType={activeActivity}
         onClose={() => setAddModalOpen(false)}
         onAdd={async (payload) => {
           const created = await onAddStudent(payload);
