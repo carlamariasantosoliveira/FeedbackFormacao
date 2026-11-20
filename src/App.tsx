@@ -175,7 +175,6 @@ export default function App() {
         <HomeScreen
           onSelectTeacher={handleOpenTeacherFlow}
           onSelectStudent={() => setScreen('student-login')}
-          onOpenRubric={openRubric}
         />
       )}
 

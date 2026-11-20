@@ -43,9 +43,9 @@ export function StudentFeedbackView({
     student.criterios.every((v) => parseScore(v) !== null);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#fafbff]">
-      <header className="no-print sticky top-0 z-10 flex items-center justify-between gap-2 sm:gap-6 px-4 sm:px-8 py-3 border-b border-slate-200 bg-white/90 backdrop-blur-md">
-        <span className="font-display text-base sm:text-lg font-bold text-[#2563eb] whitespace-nowrap shrink-0">
+    <div className="min-h-screen flex flex-col bg-[#F7FAFF]">
+      <header className="no-print sticky top-0 z-10 flex items-center justify-between gap-2 sm:gap-6 px-4 sm:px-8 py-3.5 border-b border-blue-100 bg-white/95 backdrop-blur-md">
+        <span className="font-display text-base sm:text-lg font-extrabold tracking-tight text-[#0B3B8C] whitespace-nowrap shrink-0">
           FeedbackPrivado
         </span>
 
@@ -57,7 +57,7 @@ export function StudentFeedbackView({
           <button
             type="button"
             onClick={() => onOpenRubric(student.activityType)}
-            className="inline-flex items-center gap-1.5 text-slate-600 hover:text-[#2563eb] font-medium cursor-pointer"
+            className="inline-flex items-center gap-1.5 text-slate-600 hover:text-[#0464D9] font-semibold cursor-pointer"
           >
             <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Ver matriz de critérios</span>
@@ -70,7 +70,7 @@ export function StudentFeedbackView({
             onClick={() => onOpenRubric(student.activityType)}
             aria-label="Ver matriz de critérios"
             title="Ver matriz de critérios"
-            className="sm:hidden p-2 text-slate-600 hover:text-[#2563eb] border border-slate-200 rounded-lg cursor-pointer"
+            className="sm:hidden p-2 text-slate-600 hover:text-[#0464D9] border border-blue-100 rounded-lg cursor-pointer"
           >
             <BookOpen className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -78,7 +78,7 @@ export function StudentFeedbackView({
             <button
               type="button"
               onClick={onBackToPanel}
-              className="inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-2 text-xs sm:text-sm font-medium text-[#1a1a2e] border border-slate-200 rounded-lg hover:bg-[#f8faff] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold text-[#0F2D6B] border border-blue-100 rounded-xl hover:bg-blue-50/70 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
               <span className="sm:hidden">Painel</span>
@@ -88,7 +88,7 @@ export function StudentFeedbackView({
           <button
             type="button"
             onClick={onLogout}
-            className="inline-flex items-center gap-1 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-medium text-[#1a1a2e] border border-slate-200 rounded-lg hover:bg-[#f8faff] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-1 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-[#0F2D6B] border border-blue-100 rounded-xl hover:bg-blue-50/70 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <LogOut className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
             <span>Sair</span>
@@ -97,7 +97,7 @@ export function StudentFeedbackView({
       </header>
 
       <main className="flex-1 flex items-start justify-center px-4 sm:px-6 py-8 sm:py-12">
-        <article className="print-container w-full max-w-[860px] bg-white border border-slate-200 rounded-2xl p-6 sm:p-10 shadow-[0_12px_48px_rgba(0,0,0,0.06)]">
+        <article className="print-container w-full max-w-[860px] bg-white border border-blue-100 rounded-[24px] p-6 sm:p-10 shadow-[0_18px_48px_rgba(37,99,235,0.08)]">
           {/* Course header visible on print */}
           <div className="print-only mb-6 pb-4 border-b border-slate-200">
             <CourseBrand compact />
@@ -106,16 +106,28 @@ export function StudentFeedbackView({
           {/* Student Header */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-4 pb-6 mb-7 border-b border-slate-200">
             <div className="flex items-center gap-4 flex-1 min-w-0">
-              <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#dbeafe] to-[#2563eb] text-white flex items-center justify-center text-lg font-bold shrink-0">
+              <div
+                className={`h-14 w-14 rounded-full text-white flex items-center justify-center text-lg font-bold shrink-0 shadow-sm ${
+                  student.activityType === 'cenario'
+                    ? 'bg-gradient-to-br from-[#6A2BE2] to-[#9B63FA]'
+                    : 'bg-gradient-to-br from-[#0041A8] to-[#0894EB]'
+                }`}
+              >
                 {getInitials(student.name)}
               </div>
               <div className="flex-1 min-w-0">
-                <h1 className="font-display text-2xl font-bold text-[#1a1a2e]">
+                <h1 className="font-display text-2xl font-extrabold text-[#0B3B8C] tracking-tight">
                   {student.name}
                 </h1>
                 <div className="text-sm text-slate-500 mt-0.5 space-y-0.5">
                   <div>
-                    <span className="font-medium text-[#1e40af]">{activity.activityTitle}</span>
+                    <span
+                      className={`font-semibold ${
+                        student.activityType === 'cenario' ? 'text-[#6D28D9]' : 'text-[#0464D9]'
+                      }`}
+                    >
+                      {activity.activityTitle}
+                    </span>
                     {student.projectTitle && (
                       <>
                         <span aria-hidden="true"> · </span>

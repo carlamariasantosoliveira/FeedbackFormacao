@@ -315,10 +315,10 @@ export function TeacherPanel({
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <div className="min-h-screen flex flex-col bg-[#F7FAFF]">
       {/* Top Bar Contract: Brand — Nav Links — Primary Action */}
-      <header className="sticky top-0 z-20 flex items-center justify-between gap-2 sm:gap-8 px-4 sm:px-8 py-3.5 border-b border-slate-200 bg-white/90 backdrop-blur-md">
-        <span className="font-display text-base sm:text-lg font-bold text-[#2563eb] whitespace-nowrap shrink-0">
+      <header className="sticky top-0 z-20 flex items-center justify-between gap-2 sm:gap-8 px-4 sm:px-8 py-3.5 border-b border-blue-100 bg-white/95 backdrop-blur-md">
+        <span className="font-display text-base sm:text-lg font-extrabold tracking-tight text-[#0B3B8C] whitespace-nowrap shrink-0">
           FeedbackPrivado
         </span>
 
@@ -326,7 +326,7 @@ export function TeacherPanel({
           <button
             type="button"
             onClick={() => onOpenRubric(activeActivity)}
-            className="inline-flex items-center gap-1.5 hover:text-[#1a1a2e] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-1.5 hover:text-[#0B3B8C] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <BookOpen className="h-4 w-4" aria-hidden="true" />
             <span>Critérios</span>
@@ -334,7 +334,7 @@ export function TeacherPanel({
           <button
             type="button"
             onClick={handleExportCsv}
-            className="inline-flex items-center gap-1.5 hover:text-[#1a1a2e] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-1.5 hover:text-[#0B3B8C] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
             <span>Exportar CSV</span>
@@ -342,7 +342,7 @@ export function TeacherPanel({
           <button
             type="button"
             onClick={() => setPwdModalOpen(true)}
-            className="inline-flex items-center gap-1.5 hover:text-[#1a1a2e] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-1.5 hover:text-[#0B3B8C] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <KeyRound className="h-4 w-4" aria-hidden="true" />
             <span>Password</span>
@@ -355,7 +355,7 @@ export function TeacherPanel({
             onClick={() => onOpenRubric(activeActivity)}
             aria-label="Ver critérios de avaliação"
             title="Critérios"
-            className="md:hidden p-2 text-slate-600 hover:text-[#1a1a2e] border border-slate-200 rounded-lg cursor-pointer"
+            className="md:hidden p-2 text-slate-600 hover:text-[#0B3B8C] border border-blue-100 rounded-lg cursor-pointer"
           >
             <BookOpen className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -364,7 +364,7 @@ export function TeacherPanel({
             onClick={handleExportCsv}
             aria-label="Exportar CSV"
             title="Exportar CSV"
-            className="md:hidden p-2 text-slate-600 hover:text-[#1a1a2e] border border-slate-200 rounded-lg cursor-pointer"
+            className="md:hidden p-2 text-slate-600 hover:text-[#0B3B8C] border border-blue-100 rounded-lg cursor-pointer"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -373,14 +373,14 @@ export function TeacherPanel({
             onClick={() => setPwdModalOpen(true)}
             aria-label="Alterar password do formador"
             title="Alterar Password"
-            className="md:hidden p-2 text-slate-600 hover:text-[#1a1a2e] border border-slate-200 rounded-lg cursor-pointer"
+            className="md:hidden p-2 text-slate-600 hover:text-[#0B3B8C] border border-blue-100 rounded-lg cursor-pointer"
           >
             <KeyRound className="h-4 w-4" aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={onLogout}
-            className="inline-flex items-center gap-1 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-medium text-[#1a1a2e] border border-slate-200 rounded-lg hover:bg-[#f8faff] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-1 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-[#0F2D6B] border border-blue-100 rounded-xl hover:bg-blue-50/70 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <LogOut className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
             <span>Sair</span>
@@ -389,16 +389,17 @@ export function TeacherPanel({
       </header>
 
       {/* Two Work Areas Bar */}
-      <div className="border-b border-slate-200 bg-[#f8faff] px-4 sm:px-8 py-3">
+      <div className="border-b border-blue-100 bg-gradient-to-r from-[#F0F6FF] via-[#F5F7FF] to-[#F5F0FF] px-4 sm:px-8 py-3">
         <div
           role="tablist"
           aria-label="Áreas de avaliação"
-          className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-w-4xl"
+          className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-4xl"
         >
           {ACTIVITY_ORDER.map((actId, idx) => {
             const cfg = ACTIVITIES[actId];
             const active = activeActivity === actId;
             const count = countsByActivity[actId];
+            const isCenario = actId === 'cenario';
             return (
               <button
                 key={actId}
@@ -412,21 +413,31 @@ export function TeacherPanel({
                     onChangeActivity(actId);
                   }
                 }}
-                className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-2xl border text-left transition-all cursor-pointer ${
                   active
-                    ? 'bg-white border-[#2563eb] text-[#1a1a2e] shadow-xs ring-1 ring-[#2563eb]/20'
-                    : 'bg-white/60 border-slate-200 text-slate-600 hover:bg-white hover:text-[#1a1a2e]'
+                    ? isCenario
+                      ? 'bg-gradient-to-r from-[#6A2BE2] to-[#8B5CF6] border-white text-white shadow-[0_8px_22px_rgba(124,58,237,0.25)]'
+                      : 'bg-gradient-to-r from-[#0041A8] to-[#0894EB] border-white text-white shadow-[0_8px_22px_rgba(4,100,217,0.24)]'
+                    : 'bg-white/85 border-blue-100 text-[#0F2D6B] hover:bg-white'
                 }`}
               >
                 <div className="min-w-0">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[#2563eb]">
+                  <div
+                    className={`text-[11px] font-bold uppercase tracking-wider ${
+                      active
+                        ? 'text-white/85'
+                        : isCenario
+                          ? 'text-[#7C3AED]'
+                          : 'text-[#0464D9]'
+                    }`}
+                  >
                     Área {idx + 1} · {cfg.criteria.length} critérios
                   </div>
                   <div className="text-sm font-bold truncate">{cfg.activityTitle}</div>
                 </div>
                 <span
-                  className={`font-mono text-xs font-semibold px-2.5 py-1 rounded-lg tabular-nums shrink-0 ${
-                    active ? 'bg-[#f0f4ff] text-[#1e40af]' : 'bg-slate-100 text-slate-600'
+                  className={`font-mono text-xs font-bold px-2.5 py-1 rounded-lg tabular-nums shrink-0 ${
+                    active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
                   }`}
                 >
                   {count}
@@ -437,9 +448,9 @@ export function TeacherPanel({
         </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[324px_1fr]">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[324px_1fr] bg-white">
         {/* Sidebar */}
-        <aside className="border-b lg:border-b-0 lg:border-r border-slate-200 bg-[#fafbff] p-4 sm:p-5 flex flex-col gap-3">
+        <aside className="border-b lg:border-b-0 lg:border-r border-blue-100 bg-[#F8FBFF] p-4 sm:p-5 flex flex-col gap-3">
           <div className="flex items-center justify-between text-xs text-slate-500 px-1">
             <span className="font-semibold uppercase tracking-wider">Formandos ({stats.total})</span>
             <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
@@ -457,9 +468,9 @@ export function TeacherPanel({
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={`Procurar em ${activityConfig.shortLabel}...`}
+              placeholder="Procurar formando..."
               aria-label="Procurar formando"
-              className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:border-[#2563eb]"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-blue-100 rounded-xl outline-none focus:border-[#0464D9]"
             />
           </div>
 

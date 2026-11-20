@@ -1,16 +1,16 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Playfair Display", Georgia, serif;
-  --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
+  --font-display: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
 @layer base {
   body {
     font-family: var(--font-sans);
-    color: #1a1a2e;
-    background-color: #ffffff;
+    color: #0f2d6b;
+    background-color: #f7faff;
   }
 
   h1, h2, h3, .font-display {
@@ -49,7 +49,7 @@
 }
 
 .feedback-prose a {
-  color: #2563eb;
+  color: #1d4ed8;
   text-decoration: underline;
   word-break: break-word;
 }
@@ -81,7 +81,7 @@
   }
 
   .print-badge {
-    background: #1a1a2e !important;
+    background: #0f2d6b !important;
     color: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
