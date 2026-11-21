@@ -1,38 +1,55 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  WORD_STYLE_PRESETS,
   cleanPastedFeedbackHtml,
   DEFAULT_FEEDBACK_FONT,
-  DEFAULT_FEEDBACK_SIZE,
   normalizeAllowedFontFamily,
   normalizeAllowedFontSize,
   sanitizeInlineStyle,
+  stepFontSizePt,
+  transformTextCase,
   uniformizeFeedbackHtml,
 } from './feedbackFormat';
 
-test('normalizeAllowedFontFamily maps Calibri and Carlito safely and rejects arbitrary fonts', () => {
+test('normalizeAllowedFontFamily maps Word fonts safely and rejects arbitrary fonts', () => {
   assert.equal(normalizeAllowedFontFamily('Calibri'), DEFAULT_FEEDBACK_FONT);
-  assert.equal(normalizeAllowedFontFamily('Calibri, sans-serif'), DEFAULT_FEEDBACK_FONT);
-  assert.equal(normalizeAllowedFontFamily('Carlito'), DEFAULT_FEEDBACK_FONT);
-  assert.equal(normalizeAllowedFontFamily('"Plus Jakarta Sans", sans-serif'), '"Plus Jakarta Sans", sans-serif');
+  assert.equal(normalizeAllowedFontFamily('Arial'), 'Arial, Arimo, Helvetica, sans-serif');
+  assert.equal(normalizeAllowedFontFamily('Times New Roman'), '"Times New Roman", Tinos, Times, serif');
+  assert.equal(normalizeAllowedFontFamily('Georgia'), 'Georgia, serif');
   assert.equal(normalizeAllowedFontFamily('Comic Sans MS'), null);
 });
 
-test('normalizeAllowedFontSize validates px and converts pt safely within 10-32px bounds', () => {
+test('normalizeAllowedFontSize validates pt and px within safe bounds', () => {
+  assert.equal(normalizeAllowedFontSize('11pt'), '11pt');
+  assert.equal(normalizeAllowedFontSize('36pt'), '36pt');
   assert.equal(normalizeAllowedFontSize('14px'), '14px');
-  assert.equal(normalizeAllowedFontSize('18px'), '18px');
-  assert.equal(normalizeAllowedFontSize('12pt'), '16px');
   assert.equal(normalizeAllowedFontSize('999px'), null);
-  assert.equal(normalizeAllowedFontSize('4px'), null);
+  assert.equal(normalizeAllowedFontSize('4pt'), null);
 });
 
-test('sanitizeInlineStyle strips dangerous or extraneous CSS while keeping font-family and font-size', () => {
+test('stepFontSizePt increases and decreases along Word pt scale', () => {
+  assert.equal(stepFontSizePt('11pt', 1), '12pt');
+  assert.equal(stepFontSizePt('11pt', -1), '10pt');
+  assert.equal(stepFontSizePt('8pt', -1), '8pt');
+  assert.equal(stepFontSizePt('36pt', 1), '36pt');
+});
+
+test('transformTextCase formats sentence, lower, upper, and capitalize modes', () => {
+  assert.equal(transformTextCase('OLÁ MUNDO. BOM DIA!', 'lower'), 'olá mundo. bom dia!');
+  assert.equal(transformTextCase('olá mundo', 'upper'), 'OLÁ MUNDO');
+  assert.equal(transformTextCase('olá mundo', 'capitalize'), 'Olá Mundo');
+  assert.equal(transformTextCase('OLÁ MUNDO. TUDO BEM?', 'sentence'), 'Olá mundo. Tudo bem?');
+});
+
+test('sanitizeInlineStyle keeps safe Word CSS props and drops dangerous/unknown CSS', () => {
   assert.equal(
-    sanitizeInlineStyle('font-family: Calibri; font-size: 16px; color: red; background: yellow; position: fixed;'),
-    'font-family: Calibri, Carlito, sans-serif; font-size: 16px'
+    sanitizeInlineStyle(
+      'font-family: Calibri; font-size: 11pt; color: #1D4ED8; background-color: #FEF08A; text-align: justify; line-height: 1.5; position: fixed;'
+    ),
+    'font-family: Calibri, Carlito, sans-serif; font-size: 11pt; color: #1D4ED8; background-color: #FEF08A; text-align: justify; line-height: 1.5'
   );
-  assert.equal(sanitizeInlineStyle('background: url(javascript:alert(1)); font-size: 14px'), '');
-  assert.equal(sanitizeInlineStyle('color: #333; margin: 12px;'), '');
+  assert.equal(sanitizeInlineStyle('background: url(javascript:alert(1)); font-size: 11pt'), '');
 });
 
 test('cleanPastedFeedbackHtml removes Word/Docs clutter while keeping semantic markup', () => {
@@ -45,12 +62,25 @@ test('cleanPastedFeedbackHtml removes Word/Docs clutter while keeping semantic m
   );
 });
 
-test('uniformizeFeedbackHtml resets mixed fonts/sizes and wraps cleanly in Calibri 14px', () => {
+test('uniformizeFeedbackHtml resets mixed fonts/sizes and wraps cleanly in Calibri 11pt', () => {
   const mixed =
-    '<div data-uniform="true" style="font-family: Arial; font-size: 20px;"><p><span style="font-size: 18px">Texto</span> <strong>importante</strong></p></div>';
-  const out = uniformizeFeedbackHtml(mixed, DEFAULT_FEEDBACK_FONT, '14px');
+    '<div data-uniform="true" style="font-family: Arial; font-size: 20pt;"><p><span style="font-size: 18pt">Texto</span> <strong>importante</strong></p></div>';
+  const out = uniformizeFeedbackHtml(mixed, DEFAULT_FEEDBACK_FONT, '11pt');
   assert.equal(
     out,
-    '<div data-uniform="true" style="font-family: Calibri, Carlito, sans-serif; font-size: 14px;"><p>Texto <strong>importante</strong></p></div>'
+    '<div data-uniform="true" style="font-family: Calibri, Carlito, sans-serif; font-size: 11pt;"><p>Texto <strong>importante</strong></p></div>'
   );
+});
+
+test('WORD_STYLE_PRESETS includes Normal, Sem Espacamento, Cabeçalho 1-3, Título, and Subtítulo', () => {
+  const ids = WORD_STYLE_PRESETS.map((s) => s.id);
+  assert.deepEqual(ids, [
+    'normal',
+    'no-spacing',
+    'heading-1',
+    'heading-2',
+    'heading-3',
+    'title',
+    'subtitle',
+  ]);
 });

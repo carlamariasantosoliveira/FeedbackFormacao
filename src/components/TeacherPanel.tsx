@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ClipboardEvent as ReactClipboardEvent } from 'react';
 import {
-  AlignLeft,
   BookOpen,
   Check,
   CheckCircle2,
@@ -24,9 +23,11 @@ import type { ActivityType, ScoreInput, StudentRecord } from '../types.ts';
 import {
   DEFAULT_FEEDBACK_FONT,
   DEFAULT_FEEDBACK_SIZE,
-  FEEDBACK_FONT_OPTIONS,
-  FEEDBACK_SIZE_OPTIONS,
+  type TextCaseMode,
+  type WordStylePreset,
   cleanPastedFeedbackHtml,
+  stepFontSizePt,
+  transformTextCase,
   uniformizeFeedbackHtml,
 } from '../lib/feedbackFormat.ts';
 import {
@@ -44,6 +45,7 @@ import {
 import { AddStudentModal } from './AddStudentModal.tsx';
 import { ChangePasswordModal } from './ChangePasswordModal.tsx';
 import { ConfirmModal } from './ConfirmModal.tsx';
+import { WordFormattingRibbon } from './WordFormattingRibbon.tsx';
 
 interface TeacherPanelProps {
   students: StudentRecord[];
@@ -131,6 +133,9 @@ export function TeacherPanel({
   const [scores, setScores] = useState<ScoreInput[]>(() => criteria.map(() => ''));
   const [editorFont, setEditorFont] = useState(DEFAULT_FEEDBACK_FONT);
   const [editorSize, setEditorSize] = useState(DEFAULT_FEEDBACK_SIZE);
+  const [activeTextColor, setActiveTextColor] = useState('#1a1a2e');
+  const [activeHighlightColor, setActiveHighlightColor] = useState('transparent');
+  const [activeLineSpacing, setActiveLineSpacing] = useState('1.5');
   const editorRef = useRef<HTMLDivElement | null>(null);
   const savedRangeRef = useRef<Range | null>(null);
 
@@ -205,38 +210,120 @@ export function TeacherPanel({
     }
   }
 
+  function getActiveEditorRange(): Range | null {
+    const editor = editorRef.current;
+    if (!editor) return null;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && editor.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+      return sel.getRangeAt(0);
+    }
+    if (savedRangeRef.current && editor.contains(savedRangeRef.current.commonAncestorContainer)) {
+      return savedRangeRef.current;
+    }
+    return null;
+  }
+
   function execFormat(command: string) {
-    if (!editorRef.current) return;
-    editorRef.current.focus();
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const saved = getActiveEditorRange();
+    if (saved) {
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(saved);
+      }
+    }
     document.execCommand(command, false);
     saveEditorSelection();
     setDirty(true);
   }
 
-  function applyTextStyle(prop: 'fontFamily' | 'fontSize', value: string, nextFont: string, nextSize: string) {
+  function applySelectionSpanStyle(
+    prop: 'fontFamily' | 'fontSize' | 'color' | 'backgroundColor',
+    value: string
+  ): boolean {
+    const editor = editorRef.current;
+    if (!editor) return false;
+    const activeRange = getActiveEditorRange();
+    if (!activeRange || activeRange.collapsed) return false;
+
+    const span = document.createElement('span');
+    span.style[prop] = value;
+    const fragment = activeRange.extractContents();
+    fragment.querySelectorAll('span').forEach((child) => {
+      child.style[prop] = '';
+    });
+    span.appendChild(fragment);
+    activeRange.insertNode(span);
+
+    const newRange = document.createRange();
+    newRange.selectNodeContents(span);
+    const sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    }
+    savedRangeRef.current = newRange.cloneRange();
+    setDirty(true);
+    return true;
+  }
+
+  function handleFontChange(nextFont: string) {
+    setEditorFont(nextFont);
+    if (applySelectionSpanStyle('fontFamily', nextFont)) return;
+    const editor = editorRef.current;
+    if (editor && editor.innerHTML.trim()) {
+      editor.innerHTML = uniformizeFeedbackHtml(editor.innerHTML, nextFont, editorSize);
+      setDirty(true);
+      onToast('Tipo de letra aplicado a todo o texto.');
+    }
+  }
+
+  function handleSizeChange(nextSize: string) {
+    setEditorSize(nextSize);
+    if (applySelectionSpanStyle('fontSize', nextSize)) return;
+    const editor = editorRef.current;
+    if (editor && editor.innerHTML.trim()) {
+      editor.innerHTML = uniformizeFeedbackHtml(editor.innerHTML, editorFont, nextSize);
+      setDirty(true);
+      onToast('Tamanho aplicado a todo o texto.');
+    }
+  }
+
+  function handleStepSize(delta: 1 | -1) {
+    const next = stepFontSizePt(editorSize, delta);
+    handleSizeChange(next);
+  }
+
+  function handleApplyTextColor(color: string) {
+    setActiveTextColor(color);
+    if (!applySelectionSpanStyle('color', color)) {
+      onToast('Seleciona primeiro o texto para aplicar a cor da letra.');
+    }
+  }
+
+  function handleApplyHighlightColor(color: string) {
+    setActiveHighlightColor(color);
+    if (!applySelectionSpanStyle('backgroundColor', color)) {
+      onToast('Seleciona primeiro o texto para aplicar o realce.');
+    }
+  }
+
+  function handleTransformCase(mode: TextCaseMode) {
     const editor = editorRef.current;
     if (!editor) return;
-
-    const sel = window.getSelection();
-    let activeRange: Range | null = null;
-    if (sel && sel.rangeCount > 0 && editor.contains(sel.getRangeAt(0).commonAncestorContainer)) {
-      activeRange = sel.getRangeAt(0);
-    } else if (savedRangeRef.current && editor.contains(savedRangeRef.current.commonAncestorContainer)) {
-      activeRange = savedRangeRef.current;
-    }
-
+    const activeRange = getActiveEditorRange();
     if (activeRange && !activeRange.collapsed) {
-      const span = document.createElement('span');
-      span.style[prop] = value;
-      const fragment = activeRange.extractContents();
-      fragment.querySelectorAll('span').forEach((child) => {
-        child.style[prop] = '';
-      });
-      span.appendChild(fragment);
-      activeRange.insertNode(span);
-
+      const selectedText = activeRange.toString();
+      const transformed = transformTextCase(selectedText, mode);
+      activeRange.deleteContents();
+      const textNode = document.createTextNode(transformed);
+      activeRange.insertNode(textNode);
       const newRange = document.createRange();
-      newRange.selectNodeContents(span);
+      newRange.selectNodeContents(textNode);
+      const sel = window.getSelection();
       if (sel) {
         sel.removeAllRanges();
         sel.addRange(newRange);
@@ -245,22 +332,145 @@ export function TeacherPanel({
       setDirty(true);
       return;
     }
+    onToast('Seleciona o texto que queres converter para maiúsculas/minúsculas.');
+  }
 
-    if (editor.innerHTML.trim()) {
-      editor.innerHTML = uniformizeFeedbackHtml(editor.innerHTML, nextFont, nextSize);
+  function handleClearFormatting() {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const activeRange = getActiveEditorRange();
+    if (activeRange && !activeRange.collapsed) {
+      editor.focus();
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(activeRange);
+      }
+      document.execCommand('removeFormat', false);
+      const refreshedRange = getActiveEditorRange();
+      if (refreshedRange && !refreshedRange.collapsed) {
+        const frag = refreshedRange.extractContents();
+        frag.querySelectorAll('span, font, mark, b, strong, i, em, u, s, strike, sub, sup').forEach((el) => {
+          const parent = el.parentNode;
+          if (!parent) return;
+          while (el.firstChild) parent.insertBefore(el.firstChild, el);
+          parent.removeChild(el);
+        });
+        frag.querySelectorAll('*').forEach((el) => {
+          if (el instanceof HTMLElement) {
+            el.removeAttribute('style');
+          }
+        });
+        refreshedRange.insertNode(frag);
+      }
+      saveEditorSelection();
       setDirty(true);
-      onToast('Formatação aplicada a todo o texto.');
+      onToast('Formatação da seleção limpa.');
+      return;
     }
+
+    setEditorFont(DEFAULT_FEEDBACK_FONT);
+    setEditorSize(DEFAULT_FEEDBACK_SIZE);
+    setActiveTextColor('#1a1a2e');
+    setActiveHighlightColor('transparent');
+    setActiveLineSpacing('1.5');
+    if (editor.innerHTML.trim()) {
+      editor.innerHTML = uniformizeFeedbackHtml(
+        editor.innerHTML,
+        DEFAULT_FEEDBACK_FONT,
+        DEFAULT_FEEDBACK_SIZE
+      );
+      setDirty(true);
+    }
+    onToast('Formatação limpa para Calibri 11.');
   }
 
-  function handleFontChange(nextFont: string) {
-    setEditorFont(nextFont);
-    applyTextStyle('fontFamily', nextFont, nextFont, editorSize);
+  function handleChangeLineSpacing(spacing: string) {
+    setActiveLineSpacing(spacing);
+    const editor = editorRef.current;
+    if (!editor) return;
+    const activeRange = getActiveEditorRange();
+    if (activeRange) {
+      let node: Node | null = activeRange.commonAncestorContainer;
+      while (node && node !== editor) {
+        if (node instanceof HTMLElement && /^(P|H1|H2|H3|DIV|LI|BLOCKQUOTE)$/.test(node.tagName)) {
+          node.style.lineHeight = spacing;
+          setDirty(true);
+          return;
+        }
+        node = node.parentNode;
+      }
+    }
+    setDirty(true);
   }
 
-  function handleSizeChange(nextSize: string) {
-    setEditorSize(nextSize);
-    applyTextStyle('fontSize', nextSize, editorFont, nextSize);
+  function handleApplyStylePreset(preset: WordStylePreset) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const activeRange = getActiveEditorRange();
+
+    let targetBlock: HTMLElement | null = null;
+    if (activeRange) {
+      let node: Node | null = activeRange.startContainer;
+      while (node && node !== editor) {
+        if (node instanceof HTMLElement && /^(P|H1|H2|H3|DIV|BLOCKQUOTE)$/.test(node.tagName)) {
+          targetBlock = node;
+          break;
+        }
+        node = node.parentNode;
+      }
+    }
+
+    const applyPresetStyles = (el: HTMLElement) => {
+      el.style.fontFamily = preset.style.fontFamily;
+      el.style.fontSize = preset.style.fontSize;
+      el.style.fontWeight = preset.style.fontWeight;
+      el.style.fontStyle = preset.style.fontStyle;
+      el.style.color = preset.style.color;
+      el.style.lineHeight = preset.style.lineHeight;
+      el.style.marginBottom = preset.style.marginBottom;
+    };
+
+    if (targetBlock && targetBlock !== editor && targetBlock.dataset.uniform !== 'true') {
+      const replacement = document.createElement(preset.tag);
+      replacement.innerHTML = targetBlock.innerHTML;
+      applyPresetStyles(replacement);
+      targetBlock.replaceWith(replacement);
+      const r = document.createRange();
+      r.selectNodeContents(replacement);
+      r.collapse(false);
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+      savedRangeRef.current = r.cloneRange();
+    } else {
+      const block = document.createElement(preset.tag);
+      applyPresetStyles(block);
+      if (activeRange && !activeRange.collapsed) {
+        block.appendChild(activeRange.extractContents());
+        activeRange.insertNode(block);
+      } else {
+        block.innerHTML = '<br>';
+        editor.appendChild(block);
+      }
+      const r = document.createRange();
+      r.selectNodeContents(block);
+      r.collapse(false);
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+      savedRangeRef.current = r.cloneRange();
+    }
+
+    setEditorFont(preset.style.fontFamily);
+    setEditorSize(preset.style.fontSize);
+    setActiveLineSpacing(preset.style.lineHeight);
+    setDirty(true);
   }
 
   function handleUniformizeAll() {
@@ -825,97 +1035,24 @@ export function TeacherPanel({
                   </button>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-1.5 p-2 bg-[#f8faff] border border-slate-200 border-b-0 rounded-t-xl">
-                  <label htmlFor="feedback-font-select" className="sr-only">
-                    Tipo de letra
-                  </label>
-                  <select
-                    id="feedback-font-select"
-                    aria-label="Tipo de letra"
-                    value={editorFont}
-                    onChange={(e) => handleFontChange(e.target.value)}
-                    className="px-2.5 py-1 text-xs font-medium text-[#1a1a2e] bg-white border border-slate-200 rounded-md outline-none focus:border-[#0464D9] cursor-pointer"
-                    title="Tipo de letra (aplica à seleção ou a todo o texto)"
-                  >
-                    {FEEDBACK_FONT_OPTIONS.map((font) => (
-                      <option key={font.id} value={font.cssValue}>
-                        {font.label}
-                      </option>
-                    ))}
-                  </select>
-
-                  <label htmlFor="feedback-size-select" className="sr-only">
-                    Tamanho da letra
-                  </label>
-                  <select
-                    id="feedback-size-select"
-                    aria-label="Tamanho da letra"
-                    value={editorSize}
-                    onChange={(e) => handleSizeChange(e.target.value)}
-                    className="px-2 py-1 text-xs font-medium text-[#1a1a2e] bg-white border border-slate-200 rounded-md outline-none focus:border-[#0464D9] cursor-pointer tabular-nums"
-                    title="Tamanho da letra (aplica à seleção ou a todo o texto)"
-                  >
-                    {FEEDBACK_SIZE_OPTIONS.map((sz) => (
-                      <option key={sz.value} value={sz.value}>
-                        {sz.label}
-                      </option>
-                    ))}
-                  </select>
-
-                  <span className="w-px h-5 bg-slate-200 mx-0.5" aria-hidden="true" />
-
-                  <button
-                    type="button"
-                    onClick={() => execFormat('bold')}
-                    className="px-2.5 py-1 text-sm font-bold text-[#1a1a2e] rounded-md hover:bg-slate-200/70 cursor-pointer"
-                    title="Negrito"
-                  >
-                    B
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => execFormat('italic')}
-                    className="px-2.5 py-1 text-sm italic font-serif text-[#1a1a2e] rounded-md hover:bg-slate-200/70 cursor-pointer"
-                    title="Itálico"
-                  >
-                    I
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => execFormat('underline')}
-                    className="px-2.5 py-1 text-sm underline text-[#1a1a2e] rounded-md hover:bg-slate-200/70 cursor-pointer"
-                    title="Sublinhado"
-                  >
-                    U
-                  </button>
-                  <span className="w-px h-5 bg-slate-200 mx-0.5" aria-hidden="true" />
-                  <button
-                    type="button"
-                    onClick={() => execFormat('insertUnorderedList')}
-                    className="px-2.5 py-1 text-xs font-medium text-[#1a1a2e] rounded-md hover:bg-slate-200/70 cursor-pointer whitespace-nowrap"
-                    title="Lista com marcadores"
-                  >
-                    • Lista
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => execFormat('insertOrderedList')}
-                    className="px-2.5 py-1 text-xs font-medium text-[#1a1a2e] rounded-md hover:bg-slate-200/70 cursor-pointer whitespace-nowrap"
-                    title="Lista numerada"
-                  >
-                    1. Lista
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleUniformizeAll}
-                    className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-[#0464D9] bg-white border border-blue-200 rounded-md hover:bg-blue-50 transition-colors cursor-pointer whitespace-nowrap"
-                    title="Limpa formatações misturadas e aplica a letra e o tamanho selecionados a todo o texto"
-                  >
-                    <AlignLeft className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span>Uniformizar texto</span>
-                  </button>
-                </div>
+                <WordFormattingRibbon
+                  editorFont={editorFont}
+                  editorSize={editorSize}
+                  activeTextColor={activeTextColor}
+                  activeHighlightColor={activeHighlightColor}
+                  activeLineSpacing={activeLineSpacing}
+                  onChangeFont={handleFontChange}
+                  onChangeSize={handleSizeChange}
+                  onStepSize={handleStepSize}
+                  onTransformCase={handleTransformCase}
+                  onClearFormatting={handleClearFormatting}
+                  onExecCommand={execFormat}
+                  onApplyTextColor={handleApplyTextColor}
+                  onApplyHighlightColor={handleApplyHighlightColor}
+                  onChangeLineSpacing={handleChangeLineSpacing}
+                  onApplyStylePreset={handleApplyStylePreset}
+                  onUniformizeAll={handleUniformizeAll}
+                />
 
                 <div
                   ref={editorRef}
@@ -925,7 +1062,11 @@ export function TeacherPanel({
                   contentEditable
                   suppressContentEditableWarning
                   data-placeholder={activityConfig.feedbackPlaceholder}
-                  style={{ fontFamily: editorFont, fontSize: editorSize }}
+                  style={{
+                    fontFamily: editorFont,
+                    fontSize: editorSize,
+                    lineHeight: activeLineSpacing,
+                  }}
                   onInput={() => {
                     saveEditorSelection();
                     setDirty(true);
@@ -933,7 +1074,7 @@ export function TeacherPanel({
                   onMouseUp={saveEditorSelection}
                   onKeyUp={saveEditorSelection}
                   onPaste={handleEditorPaste}
-                  className="rich-editor min-h-[180px] px-4 py-3.5 border border-slate-200 rounded-b-xl leading-relaxed text-[#1a1a2e] bg-white outline-none focus:border-[#0464D9] feedback-prose"
+                  className="rich-editor min-h-[220px] px-4 py-3.5 border border-slate-200 rounded-b-xl text-[#1a1a2e] bg-white outline-none focus:border-[#0464D9] feedback-prose"
                 />
               </section>
 
