@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ClipboardEvent as ReactClipboardEvent } from 'react';
 import {
+  AlignLeft,
   BookOpen,
   Check,
   CheckCircle2,
@@ -19,6 +21,14 @@ import {
   UserCheck,
 } from 'lucide-react';
 import type { ActivityType, ScoreInput, StudentRecord } from '../types.ts';
+import {
+  DEFAULT_FEEDBACK_FONT,
+  DEFAULT_FEEDBACK_SIZE,
+  FEEDBACK_FONT_OPTIONS,
+  FEEDBACK_SIZE_OPTIONS,
+  cleanPastedFeedbackHtml,
+  uniformizeFeedbackHtml,
+} from '../lib/feedbackFormat.ts';
 import {
   ACTIVITIES,
   ACTIVITY_ORDER,
@@ -119,7 +129,10 @@ export function TeacherPanel({
   const [projectTitle, setProjectTitle] = useState('');
   const [targetAudience, setTargetAudience] = useState('');
   const [scores, setScores] = useState<ScoreInput[]>(() => criteria.map(() => ''));
+  const [editorFont, setEditorFont] = useState(DEFAULT_FEEDBACK_FONT);
+  const [editorSize, setEditorSize] = useState(DEFAULT_FEEDBACK_SIZE);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const savedRangeRef = useRef<Range | null>(null);
 
   useEffect(() => {
     setExpandedCritId(null);
@@ -183,10 +196,106 @@ export function TeacherPanel({
     [scores]
   );
 
+  function saveEditorSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
+    const range = sel.getRangeAt(0);
+    if (editorRef.current.contains(range.commonAncestorContainer)) {
+      savedRangeRef.current = range.cloneRange();
+    }
+  }
+
   function execFormat(command: string) {
     if (!editorRef.current) return;
     editorRef.current.focus();
     document.execCommand(command, false);
+    saveEditorSelection();
+    setDirty(true);
+  }
+
+  function applyTextStyle(prop: 'fontFamily' | 'fontSize', value: string, nextFont: string, nextSize: string) {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const sel = window.getSelection();
+    let activeRange: Range | null = null;
+    if (sel && sel.rangeCount > 0 && editor.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+      activeRange = sel.getRangeAt(0);
+    } else if (savedRangeRef.current && editor.contains(savedRangeRef.current.commonAncestorContainer)) {
+      activeRange = savedRangeRef.current;
+    }
+
+    if (activeRange && !activeRange.collapsed) {
+      const span = document.createElement('span');
+      span.style[prop] = value;
+      const fragment = activeRange.extractContents();
+      fragment.querySelectorAll('span').forEach((child) => {
+        child.style[prop] = '';
+      });
+      span.appendChild(fragment);
+      activeRange.insertNode(span);
+
+      const newRange = document.createRange();
+      newRange.selectNodeContents(span);
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+      }
+      savedRangeRef.current = newRange.cloneRange();
+      setDirty(true);
+      return;
+    }
+
+    if (editor.innerHTML.trim()) {
+      editor.innerHTML = uniformizeFeedbackHtml(editor.innerHTML, nextFont, nextSize);
+      setDirty(true);
+      onToast('Formatação aplicada a todo o texto.');
+    }
+  }
+
+  function handleFontChange(nextFont: string) {
+    setEditorFont(nextFont);
+    applyTextStyle('fontFamily', nextFont, nextFont, editorSize);
+  }
+
+  function handleSizeChange(nextSize: string) {
+    setEditorSize(nextSize);
+    applyTextStyle('fontSize', nextSize, editorFont, nextSize);
+  }
+
+  function handleUniformizeAll() {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (!editor.innerHTML.trim()) {
+      onToast('Escreve ou cola primeiro o feedback para uniformizar.');
+      return;
+    }
+    editor.innerHTML = uniformizeFeedbackHtml(editor.innerHTML, editorFont, editorSize);
+    setDirty(true);
+    onToast('Texto uniformizado com letra e tamanho iguais.');
+  }
+
+  function handleEditorPaste(e: ReactClipboardEvent<HTMLDivElement>) {
+    const htmlData = e.clipboardData.getData('text/html');
+    const plainData = e.clipboardData.getData('text/plain');
+    if (!htmlData && !plainData) return;
+
+    e.preventDefault();
+    let toInsert = '';
+    if (htmlData) {
+      toInsert = cleanPastedFeedbackHtml(htmlData);
+    } else {
+      const escaped = plainData
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      toInsert = escaped
+        .split(/\r?\n/)
+        .map((line) => (line.trim() ? `<p>${line}</p>` : '<p><br></p>'))
+        .join('');
+    }
+    document.execCommand('insertHTML', false, toInsert);
+    saveEditorSelection();
     setDirty(true);
   }
 
@@ -194,7 +303,11 @@ export function TeacherPanel({
     if (!editorRef.current) return;
     const currentText = editorRef.current.innerText.trim();
     if (!currentText) {
-      editorRef.current.innerHTML = activityConfig.templateHtml;
+      editorRef.current.innerHTML = uniformizeFeedbackHtml(
+        activityConfig.templateHtml,
+        editorFont,
+        editorSize
+      );
     } else {
       editorRef.current.innerHTML = `${editorRef.current.innerHTML}<br>${activityConfig.templateHtml}`;
     }
@@ -712,7 +825,45 @@ export function TeacherPanel({
                   </button>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-1 p-2 bg-[#f8faff] border border-slate-200 border-b-0 rounded-t-xl">
+                <div className="flex flex-wrap items-center gap-1.5 p-2 bg-[#f8faff] border border-slate-200 border-b-0 rounded-t-xl">
+                  <label htmlFor="feedback-font-select" className="sr-only">
+                    Tipo de letra
+                  </label>
+                  <select
+                    id="feedback-font-select"
+                    aria-label="Tipo de letra"
+                    value={editorFont}
+                    onChange={(e) => handleFontChange(e.target.value)}
+                    className="px-2.5 py-1 text-xs font-medium text-[#1a1a2e] bg-white border border-slate-200 rounded-md outline-none focus:border-[#0464D9] cursor-pointer"
+                    title="Tipo de letra (aplica à seleção ou a todo o texto)"
+                  >
+                    {FEEDBACK_FONT_OPTIONS.map((font) => (
+                      <option key={font.id} value={font.cssValue}>
+                        {font.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <label htmlFor="feedback-size-select" className="sr-only">
+                    Tamanho da letra
+                  </label>
+                  <select
+                    id="feedback-size-select"
+                    aria-label="Tamanho da letra"
+                    value={editorSize}
+                    onChange={(e) => handleSizeChange(e.target.value)}
+                    className="px-2 py-1 text-xs font-medium text-[#1a1a2e] bg-white border border-slate-200 rounded-md outline-none focus:border-[#0464D9] cursor-pointer tabular-nums"
+                    title="Tamanho da letra (aplica à seleção ou a todo o texto)"
+                  >
+                    {FEEDBACK_SIZE_OPTIONS.map((sz) => (
+                      <option key={sz.value} value={sz.value}>
+                        {sz.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <span className="w-px h-5 bg-slate-200 mx-0.5" aria-hidden="true" />
+
                   <button
                     type="button"
                     onClick={() => execFormat('bold')}
@@ -737,13 +888,32 @@ export function TeacherPanel({
                   >
                     U
                   </button>
-                  <span className="w-px h-5 bg-slate-200 mx-1" aria-hidden="true" />
+                  <span className="w-px h-5 bg-slate-200 mx-0.5" aria-hidden="true" />
                   <button
                     type="button"
                     onClick={() => execFormat('insertUnorderedList')}
-                    className="px-2.5 py-1 text-xs font-medium text-[#1a1a2e] rounded-md hover:bg-slate-200/70 cursor-pointer"
+                    className="px-2.5 py-1 text-xs font-medium text-[#1a1a2e] rounded-md hover:bg-slate-200/70 cursor-pointer whitespace-nowrap"
+                    title="Lista com marcadores"
                   >
                     • Lista
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => execFormat('insertOrderedList')}
+                    className="px-2.5 py-1 text-xs font-medium text-[#1a1a2e] rounded-md hover:bg-slate-200/70 cursor-pointer whitespace-nowrap"
+                    title="Lista numerada"
+                  >
+                    1. Lista
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleUniformizeAll}
+                    className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-[#0464D9] bg-white border border-blue-200 rounded-md hover:bg-blue-50 transition-colors cursor-pointer whitespace-nowrap"
+                    title="Limpa formatações misturadas e aplica a letra e o tamanho selecionados a todo o texto"
+                  >
+                    <AlignLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Uniformizar texto</span>
                   </button>
                 </div>
 
@@ -755,8 +925,15 @@ export function TeacherPanel({
                   contentEditable
                   suppressContentEditableWarning
                   data-placeholder={activityConfig.feedbackPlaceholder}
-                  onInput={() => setDirty(true)}
-                  className="rich-editor min-h-[180px] px-4 py-3.5 border border-slate-200 rounded-b-xl text-[0.95rem] leading-relaxed text-[#1a1a2e] bg-white outline-none focus:border-[#2563eb] feedback-prose"
+                  style={{ fontFamily: editorFont, fontSize: editorSize }}
+                  onInput={() => {
+                    saveEditorSelection();
+                    setDirty(true);
+                  }}
+                  onMouseUp={saveEditorSelection}
+                  onKeyUp={saveEditorSelection}
+                  onPaste={handleEditorPaste}
+                  className="rich-editor min-h-[180px] px-4 py-3.5 border border-slate-200 rounded-b-xl leading-relaxed text-[#1a1a2e] bg-white outline-none focus:border-[#0464D9] feedback-prose"
                 />
               </section>
 

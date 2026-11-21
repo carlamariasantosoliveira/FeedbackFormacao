@@ -6,6 +6,7 @@ import type {
   PerformanceLevelKey,
   ScoreInput,
 } from '../types.ts';
+import { sanitizeInlineStyle } from './feedbackFormat.ts';
 
 export const PERFORMANCE_LEVELS: readonly PerformanceLevel[] = [
   { key: 'excelente', label: 'Excelente', range: '10', suggestedScore: 10 },
@@ -357,7 +358,11 @@ export function sanitizeFeedbackHtml(rawHtml: string): string {
     .replace(/<o:p>[\s\S]*?<\/o:p>/gi, '')
     .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
     .replace(/href\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/gi, 'href="#"')
-    .replace(/href\s*=\s*(?:"file:\/\/[^"]*"|'file:\/\/[^']*')/gi, 'href="#"');
+    .replace(/href\s*=\s*(?:"file:\/\/[^"]*"|'file:\/\/[^']*')/gi, 'href="#"')
+    .replace(/\s+style\s*=\s*(?:"([^"]*)"|'([^']*)')/gi, (_match, dbl, sgl) => {
+      const safe = sanitizeInlineStyle(dbl ?? sgl ?? '');
+      return safe ? ` style="${safe}"` : '';
+    });
 
   cleaned = cleaned.trim();
   return cleaned;

@@ -174,7 +174,7 @@ export function StudentFeedbackView({
                     Comentários da Formadora
                   </h2>
                   <div
-                    className="print-surface feedback-prose bg-[#f0f4ff] border border-blue-100 rounded-xl px-5 sm:px-6 py-5 text-[0.97rem] leading-relaxed text-[#1a1a2e]"
+                    className="print-surface feedback-prose bg-[#f0f4ff] border border-blue-100 rounded-xl px-5 sm:px-6 py-5 leading-relaxed text-[#1a1a2e]"
                     dangerouslySetInnerHTML={{
                       __html: sanitizeFeedbackHtml(student.feedback),
                     }}
