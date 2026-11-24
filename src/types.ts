@@ -46,6 +46,7 @@ export interface StudentRecord {
   accessHash?: string;
   feedback: string;
   criterios: ScoreInput[];
+  criterioObservacoes: string[];
   nota: string;
   updatedAt: string;
 }
@@ -58,6 +59,7 @@ export interface StudentPublicRecord {
   targetAudience: string;
   feedback: string;
   criterios: ScoreInput[];
+  criterioObservacoes: string[];
   nota: string;
   updatedAt: string;
 }

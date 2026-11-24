@@ -100,6 +100,11 @@
 }
 
 @media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
   .no-print {
     display: none !important;
   }
@@ -113,6 +118,17 @@
     border: none !important;
     padding: 0 !important;
     max-width: 100% !important;
+    margin: 0 !important;
+  }
+
+  .print-page-break {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .print-only {

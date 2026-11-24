@@ -46,8 +46,10 @@ test('Dirty Dozen security invariants are structurally enforced in firestore.rul
   assert.match(rules, /incoming\(\)\.createdAt\s*==\s*existing\(\)\.createdAt/);
   assert.match(rules, /incoming\(\)\.updatedAt\s*==\s*request\.time/);
 
-  // Atomic batch enforcement via existsAfter & activityType enum validation
+  // Atomic batch enforcement via existsAfter & activityType/observation validation
   assert.match(rules, /isValidActivityType/);
+  assert.match(rules, /isValidObservationsList/);
+  assert.match(rules, /criterioObservacoes/);
   assert.match(rules, /existsAfter\(\/databases\/\$\(database\)\/documents\/publicFeedbacks\//);
   assert.match(rules, /existsAfter\(\/databases\/\$\(database\)\/documents\/workspaces\//);
 });

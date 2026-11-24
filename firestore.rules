@@ -67,6 +67,23 @@ service cloud.firestore {
         (data.activityType is string && data.activityType in ['projeto', 'cenario']);
     }
 
+    function isValidObsItem(arr, idx) {
+      return arr.size() <= idx || (arr[idx] is string && arr[idx].size() <= 500);
+    }
+
+    function isValidObservationsList(data) {
+      return !('criterioObservacoes' in data.keys()) || (
+        data.criterioObservacoes is list &&
+        data.criterioObservacoes.size() <= 6 &&
+        isValidObsItem(data.criterioObservacoes, 0) &&
+        isValidObsItem(data.criterioObservacoes, 1) &&
+        isValidObsItem(data.criterioObservacoes, 2) &&
+        isValidObsItem(data.criterioObservacoes, 3) &&
+        isValidObsItem(data.criterioObservacoes, 4) &&
+        isValidObsItem(data.criterioObservacoes, 5)
+      );
+    }
+
     function isValidStudent(data, workspaceKey) {
       return data.keys().hasAll([
           'name',
@@ -93,7 +110,8 @@ service cloud.firestore {
           'workspaceKey',
           'createdAt',
           'updatedAt',
-          'activityType'
+          'activityType',
+          'criterioObservacoes'
         ]) &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
         data.projectTitle is string && data.projectTitle.size() <= 200 &&
@@ -107,7 +125,8 @@ service cloud.firestore {
         data.workspaceKey == workspaceKey &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp &&
-        isValidActivityType(data);
+        isValidActivityType(data) &&
+        isValidObservationsList(data);
     }
 
     function isValidPublicFeedback(data) {
@@ -132,7 +151,8 @@ service cloud.firestore {
           'criterios',
           'nota',
           'updatedAt',
-          'activityType'
+          'activityType',
+          'criterioObservacoes'
         ]) &&
         isValidId(data.studentId) &&
         isValidHash(data.workspaceKey) &&
@@ -143,7 +163,8 @@ service cloud.firestore {
         isValidCriteriaList(data.criterios) &&
         data.nota is string && data.nota.size() <= 16 &&
         data.updatedAt is timestamp &&
-        isValidActivityType(data);
+        isValidActivityType(data) &&
+        isValidObservationsList(data);
     }
 
     // ---- /system/{docId} ----
@@ -207,6 +228,7 @@ service cloud.firestore {
             'accessHash',
             'feedback',
             'criterios',
+            'criterioObservacoes',
             'nota',
             'activityType',
             'updatedAt'
@@ -239,6 +261,7 @@ service cloud.firestore {
           'targetAudience',
           'feedback',
           'criterios',
+          'criterioObservacoes',
           'nota',
           'activityType',
           'updatedAt'

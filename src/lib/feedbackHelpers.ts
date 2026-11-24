@@ -10,6 +10,7 @@ export const BLUEPRINT_LIMITS = {
   PASSWORD_MIN: 2,
   PASSWORD_MAX: 64,
   FEEDBACK_MAX: 50000,
+  OBSERVATION_MAX: 500,
   NOTA_MAX: 16,
   ID_MAX: 128,
   ID_PATTERN: /^[a-zA-Z0-9_\-]+$/,
@@ -67,6 +68,31 @@ export function fromFirestoreCriteria(
   return criteria.map((_, i) => {
     const val = raw[i];
     return typeof val === 'number' && Number.isFinite(val) ? val : '';
+  });
+}
+
+export function normalizeObservationsForFirestore(
+  observacoes: readonly string[] | undefined,
+  activityType: ActivityType = 'projeto'
+): string[] {
+  const criteria = getCriteriaForActivity(activityType);
+  const result: string[] = [];
+  for (let i = 0; i < criteria.length; i += 1) {
+    const raw = typeof observacoes?.[i] === 'string' ? observacoes[i] : '';
+    result.push(clampString(raw, BLUEPRINT_LIMITS.OBSERVATION_MAX));
+  }
+  return result;
+}
+
+export function fromFirestoreObservations(
+  raw: unknown,
+  activityType: ActivityType = 'projeto'
+): string[] {
+  const criteria = getCriteriaForActivity(activityType);
+  if (!Array.isArray(raw)) return criteria.map(() => '');
+  return criteria.map((_, i) => {
+    const val = raw[i];
+    return typeof val === 'string' ? val.slice(0, BLUEPRINT_LIMITS.OBSERVATION_MAX) : '';
   });
 }
 

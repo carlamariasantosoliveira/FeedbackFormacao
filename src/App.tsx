@@ -16,14 +16,22 @@ import { HomeScreen } from './components/HomeScreen.tsx';
 import { LoginScreen } from './components/LoginScreen.tsx';
 import { TeacherPanel } from './components/TeacherPanel.tsx';
 import { StudentFeedbackView } from './components/StudentFeedbackView.tsx';
+import { PdfExportView } from './components/PdfExportView.tsx';
 import { RubricModal } from './components/RubricModal.tsx';
+import {
+  type PdfExportScope,
+  buildPdfDocumentTitle,
+  selectStudentsForPdfExport,
+} from './lib/pdfReportHelpers.ts';
+import { getActivityConfig } from './lib/rubric.ts';
 
 type ActiveScreen =
   | 'home'
   | 'teacher-login'
   | 'teacher-panel'
   | 'student-login'
-  | 'student-view';
+  | 'student-view'
+  | 'pdf-export';
 
 export default function App() {
   const [screen, setScreen] = useState<ActiveScreen>('home');
@@ -38,6 +46,11 @@ export default function App() {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [rubricOpen, setRubricOpen] = useState(false);
   const [rubricActivity, setRubricActivity] = useState<ActivityType>('projeto');
+  const [pdfExportState, setPdfExportState] = useState<{
+    students: StudentRecord[];
+    title: string;
+    documentTitle: string;
+  } | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [asyncError, setAsyncError] = useState<Error | null>(null);
 
@@ -62,7 +75,10 @@ export default function App() {
 
   // Attach real-time Firestore listener when trainer session is active
   useEffect(() => {
-    if (!teacherSession || (screen !== 'teacher-panel' && !isPreviewMode)) {
+    if (
+      !teacherSession ||
+      (screen !== 'teacher-panel' && screen !== 'pdf-export' && !isPreviewMode)
+    ) {
       return;
     }
 
@@ -142,12 +158,42 @@ export default function App() {
       targetAudience: string;
       feedback: string;
       criterios: ScoreInput[];
+      criterioObservacoes: string[];
     }
   ): Promise<StudentRecord> {
     if (!teacherSession) throw new Error('Sessão expirada.');
     const target = students.find((s) => s.id === id);
     if (!target) throw new Error('Formando não encontrado.');
     return await saveStudentFeedbackInFirestore(teacherSession.workspaceKey, target, payload);
+  }
+
+  function handleExportPdf(scope: PdfExportScope, targetStudent?: StudentRecord) {
+    const selectedList =
+      scope === 'single' && targetStudent
+        ? [targetStudent]
+        : selectStudentsForPdfExport(students, scope, {
+            activeActivity,
+            targetStudentId: targetStudent?.id ?? selectedId,
+          });
+
+    if (selectedList.length === 0) {
+      showToast('Não existem formandos para exportar em PDF.');
+      return;
+    }
+
+    const title =
+      scope === 'single'
+        ? `PDF Individual · ${selectedList[0].name}`
+        : scope === 'area'
+          ? `PDF · ${getActivityConfig(activeActivity).activityTitle} (${selectedList.length})`
+          : `PDF · Todos os Formandos (${selectedList.length})`;
+
+    setPdfExportState({
+      students: selectedList,
+      title,
+      documentTitle: buildPdfDocumentTitle(scope, selectedList, activeActivity),
+    });
+    setScreen('pdf-export');
   }
 
   async function handleDeleteStudent(id: string): Promise<void> {
@@ -158,13 +204,14 @@ export default function App() {
   }
 
   function handleLogout() {
-    if (screen === 'teacher-panel' || isPreviewMode) {
+    if (screen === 'teacher-panel' || screen === 'pdf-export' || isPreviewMode) {
       clearTeacherSession();
       setTeacherSession(null);
       setStudents([]);
       setSelectedId(null);
     }
     setActiveStudent(null);
+    setPdfExportState(null);
     setIsPreviewMode(false);
     setScreen('home');
   }
@@ -210,6 +257,7 @@ export default function App() {
             setIsPreviewMode(true);
             setScreen('student-view');
           }}
+          onExportPdf={handleExportPdf}
           onOpenRubric={openRubric}
           onChangeTeacherPassword={handleChangeTeacherPassword}
           onLogout={handleLogout}
@@ -227,6 +275,18 @@ export default function App() {
           }}
           onOpenRubric={openRubric}
           onLogout={handleLogout}
+        />
+      )}
+
+      {screen === 'pdf-export' && pdfExportState && (
+        <PdfExportView
+          students={pdfExportState.students}
+          title={pdfExportState.title}
+          documentTitle={pdfExportState.documentTitle}
+          onBackToPanel={() => {
+            setPdfExportState(null);
+            setScreen('teacher-panel');
+          }}
         />
       )}
 

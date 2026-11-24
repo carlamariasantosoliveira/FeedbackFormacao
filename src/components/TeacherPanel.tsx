@@ -11,6 +11,8 @@ import {
   Database,
   Download,
   Eye,
+  FileDown,
+  FileText,
   KeyRound,
   LogOut,
   Plus,
@@ -20,6 +22,8 @@ import {
   UserCheck,
 } from 'lucide-react';
 import type { ActivityType, ScoreInput, StudentRecord } from '../types.ts';
+import { BLUEPRINT_LIMITS, fromFirestoreObservations } from '../lib/feedbackHelpers.ts';
+import type { PdfExportScope } from '../lib/pdfReportHelpers.ts';
 import {
   DEFAULT_FEEDBACK_FONT,
   DEFAULT_FEEDBACK_SIZE,
@@ -68,10 +72,12 @@ interface TeacherPanelProps {
       targetAudience: string;
       feedback: string;
       criterios: ScoreInput[];
+      criterioObservacoes: string[];
     }
   ) => Promise<StudentRecord>;
   onDeleteStudent: (id: string) => Promise<void>;
   onPreviewStudent: (student: StudentRecord) => void;
+  onExportPdf: (scope: PdfExportScope, targetStudent?: StudentRecord) => void;
   onOpenRubric: (activity: ActivityType) => void;
   onChangeTeacherPassword: (currentPwd: string, newPwd: string) => Promise<void>;
   onLogout: () => void;
@@ -91,6 +97,7 @@ export function TeacherPanel({
   onSaveFeedback,
   onDeleteStudent,
   onPreviewStudent,
+  onExportPdf,
   onOpenRubric,
   onChangeTeacherPassword,
   onLogout,
@@ -101,11 +108,33 @@ export function TeacherPanel({
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [pwdModalOpen, setPwdModalOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
+  const pdfMenuRef = useRef<HTMLDivElement | null>(null);
   const [copiedPwd, setCopiedPwd] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [expandedCritId, setExpandedCritId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!pdfMenuOpen) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      if (pdfMenuRef.current && !pdfMenuRef.current.contains(e.target as Node)) {
+        setPdfMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPdfMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [pdfMenuOpen]);
 
   const activityConfig = getActivityConfig(activeActivity);
   const criteria = activityConfig.criteria;
@@ -131,6 +160,7 @@ export function TeacherPanel({
   const [projectTitle, setProjectTitle] = useState('');
   const [targetAudience, setTargetAudience] = useState('');
   const [scores, setScores] = useState<ScoreInput[]>(() => criteria.map(() => ''));
+  const [observations, setObservations] = useState<string[]>(() => criteria.map(() => ''));
   const [editorFont, setEditorFont] = useState(DEFAULT_FEEDBACK_FONT);
   const [editorSize, setEditorSize] = useState(DEFAULT_FEEDBACK_SIZE);
   const [activeTextColor, setActiveTextColor] = useState('#1a1a2e');
@@ -145,6 +175,7 @@ export function TeacherPanel({
       setProjectTitle('');
       setTargetAudience('');
       setScores(criteria.map(() => ''));
+      setObservations(criteria.map(() => ''));
       if (editorRef.current) {
         editorRef.current.innerHTML = '';
       }
@@ -159,6 +190,7 @@ export function TeacherPanel({
       return val === undefined || val === null ? '' : val;
     });
     setScores(nextScores);
+    setObservations(fromFirestoreObservations(selectedStudent.criterioObservacoes, activeActivity));
     if (editorRef.current) {
       editorRef.current.innerHTML = selectedStudent.feedback || '';
     }
@@ -550,6 +582,15 @@ export function TeacherPanel({
     setDirty(true);
   }
 
+  function updateObservation(index: number, value: string) {
+    setObservations((prev) => {
+      const next = [...prev];
+      next[index] = value.slice(0, BLUEPRINT_LIMITS.OBSERVATION_MAX);
+      return next;
+    });
+    setDirty(true);
+  }
+
   async function handleSave(): Promise<StudentRecord | null> {
     if (!selectedStudent) return null;
     setSaving(true);
@@ -560,6 +601,7 @@ export function TeacherPanel({
         targetAudience,
         feedback: html,
         criterios: scores,
+        criterioObservacoes: observations,
       });
       setDirty(false);
       onToast('Feedback e avaliação guardados na base de dados.');
@@ -577,6 +619,35 @@ export function TeacherPanel({
     if (saved) {
       onPreviewStudent(saved);
     }
+  }
+
+  async function handleExportStudentPdf(target: StudentRecord) {
+    setPdfMenuOpen(false);
+    if (selectedStudent && target.id === selectedStudent.id && dirty) {
+      const saved = await handleSave();
+      if (saved) {
+        onExportPdf('single', saved);
+      }
+      return;
+    }
+    onExportPdf('single', target);
+  }
+
+  async function handleExportScopePdf(scope: PdfExportScope) {
+    setPdfMenuOpen(false);
+    if (scope === 'single') {
+      if (!selectedStudent) {
+        onToast('Seleciona primeiro um formando.');
+        return;
+      }
+      await handleExportStudentPdf(selectedStudent);
+      return;
+    }
+    if (selectedStudent && dirty) {
+      const saved = await handleSave();
+      if (!saved) return;
+    }
+    onExportPdf(scope);
   }
 
   async function handleCopyPassword(pwd: string) {
@@ -662,6 +733,72 @@ export function TeacherPanel({
             <Download className="h-4 w-4" aria-hidden="true" />
             <span>Exportar CSV</span>
           </button>
+          <div ref={pdfMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setPdfMenuOpen((o) => !o)}
+              aria-expanded={pdfMenuOpen}
+              aria-haspopup="menu"
+              className="inline-flex items-center gap-1.5 hover:text-[#0B3B8C] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              <span>Exportar PDF</span>
+              <ChevronDown className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+            </button>
+            {pdfMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Opções de exportação PDF"
+                className="absolute left-0 top-full mt-2 z-30 w-72 bg-white border border-blue-100 rounded-xl shadow-xl py-1.5 text-xs"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => handleExportScopePdf('area')}
+                  className="w-full text-left px-3.5 py-2.5 hover:bg-blue-50/70 text-[#0F2D6B] flex items-center justify-between gap-2 cursor-pointer"
+                >
+                  <div>
+                    <div className="font-semibold">Todos desta área</div>
+                    <div className="text-[11px] text-slate-500">{activityConfig.activityTitle}</div>
+                  </div>
+                  <span className="font-mono text-[11px] font-bold bg-blue-50 text-[#0464D9] px-2 py-0.5 rounded-md tabular-nums">
+                    {areaStudents.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => handleExportScopePdf('all')}
+                  className="w-full text-left px-3.5 py-2.5 hover:bg-blue-50/70 text-[#0F2D6B] flex items-center justify-between gap-2 cursor-pointer"
+                >
+                  <div>
+                    <div className="font-semibold">Todos os formandos</div>
+                    <div className="text-[11px] text-slate-500">Ambas as áreas de avaliação</div>
+                  </div>
+                  <span className="font-mono text-[11px] font-bold bg-blue-50 text-[#0464D9] px-2 py-0.5 rounded-md tabular-nums">
+                    {students.length}
+                  </span>
+                </button>
+                {selectedStudent && (
+                  <>
+                    <div className="my-1 border-t border-slate-100" />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => handleExportScopePdf('single')}
+                      className="w-full text-left px-3.5 py-2.5 hover:bg-blue-50/70 text-[#0F2D6B] flex items-center justify-between gap-2 cursor-pointer"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-semibold">Formando selecionado (1 a 1)</div>
+                        <div className="text-[11px] text-slate-500 truncate">{selectedStudent.name}</div>
+                      </div>
+                      <FileDown className="h-4 w-4 text-[#0464D9] shrink-0" aria-hidden="true" />
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setPwdModalOpen(true)}
@@ -690,6 +827,15 @@ export function TeacherPanel({
             className="md:hidden p-2 text-slate-600 hover:text-[#0B3B8C] border border-blue-100 rounded-lg cursor-pointer"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleExportScopePdf('area')}
+            aria-label="Exportar todos em PDF"
+            title="Exportar todos desta área em PDF"
+            className="md:hidden p-2 text-slate-600 hover:text-[#0B3B8C] border border-blue-100 rounded-lg cursor-pointer"
+          >
+            <FileText className="h-4 w-4" aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -849,37 +995,50 @@ export function TeacherPanel({
                 const isSelected = s.id === selectedId;
                 const hasFeedback = Boolean(s.feedback || s.nota);
                 return (
-                  <button
+                  <div
                     key={s.id}
-                    type="button"
-                    onClick={() => onSelectStudent(s.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors cursor-pointer ${
+                    className={`group flex items-center gap-1 rounded-xl pr-1.5 transition-colors ${
                       isSelected
                         ? 'bg-blue-100/80 text-[#1a1a2e]'
                         : 'hover:bg-blue-50/70 text-[#1a1a2e]'
                     }`}
                   >
-                    <div className="h-9 w-9 rounded-full bg-[#dbeafe] text-[#1e3a8a] flex items-center justify-center text-xs font-semibold shrink-0">
-                      {getInitials(s.name)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{s.name}</div>
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5 truncate">
-                        {hasFeedback ? (
-                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
-                        ) : (
-                          <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
-                        )}
-                        <span className="truncate">
-                          {hasFeedback
-                            ? s.nota
-                              ? `Avaliado · ${s.nota}/10`
-                              : 'Com feedback'
-                            : 'Sem feedback'}
-                        </span>
+                    <button
+                      type="button"
+                      onClick={() => onSelectStudent(s.id)}
+                      className="flex-1 min-w-0 flex items-center gap-3 px-3 py-2.5 text-left cursor-pointer"
+                    >
+                      <div className="h-9 w-9 rounded-full bg-[#dbeafe] text-[#1e3a8a] flex items-center justify-center text-xs font-semibold shrink-0">
+                        {getInitials(s.name)}
                       </div>
-                    </div>
-                  </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">{s.name}</div>
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5 truncate">
+                          {hasFeedback ? (
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
+                          ) : (
+                            <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+                          )}
+                          <span className="truncate">
+                            {hasFeedback
+                              ? s.nota
+                                ? `Avaliado · ${s.nota}/10`
+                                : 'Com feedback'
+                              : 'Sem feedback'}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExportStudentPdf(s)}
+                      aria-label={`Guardar PDF de ${s.name}`}
+                      title={`Guardar PDF de ${s.name}`}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-[#0464D9] hover:bg-white/90 transition-colors shrink-0 cursor-pointer"
+                    >
+                      <FileDown className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
                 );
               })
             )}
@@ -956,12 +1115,21 @@ export function TeacherPanel({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleExportStudentPdf(selectedStudent)}
+                    disabled={saving}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-[#0464D9] bg-[#F5F8FE] border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors cursor-pointer"
+                  >
+                    <FileDown className="h-4 w-4" aria-hidden="true" />
+                    <span>Guardar PDF</span>
+                  </button>
                   <button
                     type="button"
                     onClick={handlePreview}
                     disabled={saving}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-[#1a1a2e] border border-slate-200 rounded-lg hover:bg-[#f8faff] transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-[#1a1a2e] border border-slate-200 rounded-lg hover:bg-[#f8faff] transition-colors cursor-pointer"
                   >
                     <Eye className="h-4 w-4" aria-hidden="true" />
                     <span>Pré-visualizar</span>
@@ -1145,9 +1313,9 @@ export function TeacherPanel({
                             </button>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <div className="flex flex-wrap items-center gap-2 min-w-0 md:shrink-0">
                             <div
-                              className="inline-flex items-center gap-1 p-1 bg-[#f8faff] border border-slate-200 rounded-lg"
+                              className="inline-flex flex-wrap items-center gap-1 p-1 bg-[#f8faff] border border-slate-200 rounded-lg max-w-full"
                               role="group"
                               aria-label={`Níveis rápidos para ${criterion.name}`}
                             >
@@ -1181,13 +1349,34 @@ export function TeacherPanel({
                                 min={0}
                                 max={10}
                                 step={0.5}
-                                value={scores[index] === null ? '' : scores[index]}
+                                value={scores[index] ?? ''}
                                 onChange={(e) => updateScore(index, e.target.value)}
                                 placeholder="0–10"
                                 className="w-20 px-2.5 py-1.5 text-center font-mono text-sm font-medium border border-slate-200 rounded-lg outline-none focus:border-[#2563eb] tabular-nums"
                               />
                             </div>
                           </div>
+                        </div>
+
+                        <div className="mt-3">
+                          <label
+                            htmlFor={`crit-obs-${index}`}
+                            className="flex items-center justify-between text-[11px] font-medium text-slate-600 mb-1"
+                          >
+                            <span>Observações neste critério (opcional)</span>
+                            <span className="text-[10px] text-slate-400 tabular-nums">
+                              {(observations[index] || '').length}/{BLUEPRINT_LIMITS.OBSERVATION_MAX}
+                            </span>
+                          </label>
+                          <textarea
+                            id={`crit-obs-${index}`}
+                            rows={2}
+                            maxLength={BLUEPRINT_LIMITS.OBSERVATION_MAX}
+                            value={observations[index] || ''}
+                            onChange={(e) => updateObservation(index, e.target.value)}
+                            placeholder="Escreve uma pequena observação sobre este critério..."
+                            className="w-full px-3 py-2 text-xs sm:text-[13px] text-[#1a1a2e] bg-[#FAFBFF] border border-slate-200 rounded-lg outline-none focus:border-[#2563eb] focus:bg-white resize-y leading-relaxed"
+                          />
                         </div>
 
                         {isExpanded && (
@@ -1257,6 +1446,15 @@ export function TeacherPanel({
                   >
                     <Eye className="h-4 w-4" aria-hidden="true" />
                     <span>Pré-visualizar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportStudentPdf(selectedStudent)}
+                    disabled={saving}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-[#0464D9] bg-[#F5F8FE] border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors cursor-pointer"
+                  >
+                    <FileDown className="h-4 w-4" aria-hidden="true" />
+                    <span>Guardar PDF</span>
                   </button>
                 </div>
 

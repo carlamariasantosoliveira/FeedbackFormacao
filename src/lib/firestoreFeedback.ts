@@ -16,11 +16,13 @@ import {
   BLUEPRINT_LIMITS,
   clampString,
   fromFirestoreCriteria,
+  fromFirestoreObservations,
   generateRandomHexKey,
   hashStudentPassword,
   hashTeacherPassword,
   normalizeActivityType,
   normalizeCriteriaForFirestore,
+  normalizeObservationsForFirestore,
 } from './feedbackHelpers.ts';
 import {
   calcFinalScore,
@@ -99,6 +101,7 @@ function mapStudentDoc(id: string, data: Record<string, unknown>): StudentRecord
     accessHash: typeof data.accessHash === 'string' ? data.accessHash : undefined,
     feedback: typeof data.feedback === 'string' ? data.feedback : '',
     criterios: fromFirestoreCriteria(data.criterios, activityType),
+    criterioObservacoes: fromFirestoreObservations(data.criterioObservacoes, activityType),
     nota: typeof data.nota === 'string' ? data.nota : '',
     updatedAt: formatTimestampIso(data.updatedAt),
   };
@@ -220,6 +223,7 @@ async function bootstrapDefaultWorkspace(): Promise<TeacherSession> {
   for (const s of INITIAL_SEED_STUDENTS) {
     const accessHash = await hashStudentPassword(s.password);
     const criterios = normalizeCriteriaForFirestore(s.criterios, s.activityType);
+    const criterioObservacoes = normalizeObservationsForFirestore([], s.activityType);
     const nota = calcFinalScore(s.criterios, s.activityType) ?? '';
 
     batch.set(doc(db, 'workspaces', workspaceKey, 'students', s.id), {
@@ -231,6 +235,7 @@ async function bootstrapDefaultWorkspace(): Promise<TeacherSession> {
       accessHash,
       feedback: s.feedback,
       criterios,
+      criterioObservacoes,
       nota,
       workspaceKey,
       createdAt: serverTimestamp(),
@@ -246,6 +251,7 @@ async function bootstrapDefaultWorkspace(): Promise<TeacherSession> {
       targetAudience: s.targetAudience,
       feedback: s.feedback,
       criterios,
+      criterioObservacoes,
       nota,
       updatedAt: serverTimestamp(),
     });
@@ -441,6 +447,7 @@ export async function createStudentInFirestore(
   const studentId = generateValidStudentId();
   const accessHash = await hashStudentPassword(password);
   const criterios = normalizeCriteriaForFirestore([], activityType);
+  const criterioObservacoes = normalizeObservationsForFirestore([], activityType);
 
   const studentRef = doc(db, 'workspaces', workspaceKey, 'students', studentId);
   const publicRef = doc(db, 'publicFeedbacks', accessHash);
@@ -455,6 +462,7 @@ export async function createStudentInFirestore(
     accessHash,
     feedback: '',
     criterios,
+    criterioObservacoes,
     nota: '',
     workspaceKey,
     createdAt: serverTimestamp(),
@@ -469,6 +477,7 @@ export async function createStudentInFirestore(
     targetAudience,
     feedback: '',
     criterios,
+    criterioObservacoes,
     nota: '',
     updatedAt: serverTimestamp(),
   });
@@ -489,6 +498,7 @@ export async function createStudentInFirestore(
     accessHash,
     feedback: '',
     criterios: getCriteriaForActivity(activityType).map(() => ''),
+    criterioObservacoes,
     nota: '',
     updatedAt: new Date().toISOString(),
   };
@@ -502,6 +512,7 @@ export async function saveStudentFeedbackInFirestore(
     targetAudience: string;
     feedback: string;
     criterios: ScoreInput[];
+    criterioObservacoes: string[];
   }
 ): Promise<StudentRecord> {
   const activityType = normalizeActivityType(existingStudent.activityType);
@@ -517,6 +528,10 @@ export async function saveStudentFeedbackInFirestore(
       : sanitizedHtml;
 
   const criterios = normalizeCriteriaForFirestore(payload.criterios, activityType);
+  const criterioObservacoes = normalizeObservationsForFirestore(
+    payload.criterioObservacoes,
+    activityType
+  );
   const nota = clampString(
     calcFinalScore(payload.criterios, activityType) ?? '',
     BLUEPRINT_LIMITS.NOTA_MAX
@@ -534,6 +549,7 @@ export async function saveStudentFeedbackInFirestore(
     targetAudience,
     feedback,
     criterios,
+    criterioObservacoes,
     nota,
     updatedAt: serverTimestamp(),
   });
@@ -543,6 +559,7 @@ export async function saveStudentFeedbackInFirestore(
     targetAudience,
     feedback,
     criterios,
+    criterioObservacoes,
     nota,
     updatedAt: serverTimestamp(),
   });
@@ -565,6 +582,7 @@ export async function saveStudentFeedbackInFirestore(
     targetAudience,
     feedback,
     criterios: fromFirestoreCriteria(criterios, activityType),
+    criterioObservacoes,
     nota,
     updatedAt: new Date().toISOString(),
   };
@@ -644,6 +662,7 @@ export async function lookupStudentFeedbackByPassword(
     targetAudience: typeof data.targetAudience === 'string' ? data.targetAudience : '',
     feedback: typeof data.feedback === 'string' ? data.feedback : '',
     criterios: fromFirestoreCriteria(data.criterios, activityType),
+    criterioObservacoes: fromFirestoreObservations(data.criterioObservacoes, activityType),
     nota: typeof data.nota === 'string' ? data.nota : '',
     updatedAt: formatTimestampIso(data.updatedAt),
   };

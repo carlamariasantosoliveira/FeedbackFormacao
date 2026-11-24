@@ -125,6 +125,10 @@
           "type": "string",
           "enum": ["projeto", "cenario"],
           "description": "Evaluation work area: Projeto de Intervenção or Cenário de Aprendizagem com a IA."
+        },
+        "criterioObservacoes": {
+          "type": "array",
+          "description": "Up to 6 short trainer observation strings (max 500 chars each) corresponding to each rubric criterion."
         }
       },
       "required": [
@@ -199,6 +203,10 @@
           "type": "string",
           "enum": ["projeto", "cenario"],
           "description": "Evaluation work area: Projeto de Intervenção or Cenário de Aprendizagem com a IA."
+        },
+        "criterioObservacoes": {
+          "type": "array",
+          "description": "Up to 6 short trainer observation strings (max 500 chars each) corresponding to each rubric criterion."
         }
       },
       "required": [

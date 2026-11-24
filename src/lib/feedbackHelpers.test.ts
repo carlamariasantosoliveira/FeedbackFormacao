@@ -4,11 +4,13 @@ import {
   BLUEPRINT_LIMITS,
   clampString,
   fromFirestoreCriteria,
+  fromFirestoreObservations,
   generateRandomHexKey,
   hashStudentPassword,
   hashTeacherPassword,
   normalizeActivityType,
   normalizeCriteriaForFirestore,
+  normalizeObservationsForFirestore,
 } from './feedbackHelpers.ts';
 
 test('hashStudentPassword and hashTeacherPassword produce deterministic 64-char hex digests', async () => {
@@ -41,6 +43,18 @@ test('normalizeCriteriaForFirestore and fromFirestoreCriteria round-trip cleanly
   const normalizedCenario = normalizeCriteriaForFirestore([10, 8, '', 9, 8.5], 'cenario');
   assert.deepEqual(normalizedCenario, [10, 8, null, 9, 8.5]);
   assert.deepEqual(fromFirestoreCriteria(normalizedCenario, 'cenario'), [10, 8, '', 9, 8.5]);
+});
+
+test('normalizeObservationsForFirestore and fromFirestoreObservations clamp and preserve per-criterion notes', () => {
+  const longNote = 'a'.repeat(BLUEPRINT_LIMITS.OBSERVATION_MAX + 50);
+  const normalizedProjeto = normalizeObservationsForFirestore(['  Boa clareza  ', longNote], 'projeto');
+  assert.equal(normalizedProjeto.length, 6);
+  assert.equal(normalizedProjeto[0], 'Boa clareza');
+  assert.equal(normalizedProjeto[1].length, BLUEPRINT_LIMITS.OBSERVATION_MAX);
+  assert.equal(normalizedProjeto[5], '');
+  assert.deepEqual(fromFirestoreObservations(normalizedProjeto, 'projeto'), normalizedProjeto);
+
+  assert.deepEqual(fromFirestoreObservations(undefined, 'cenario'), ['', '', '', '', '']);
 });
 
 test('normalizeActivityType defaults legacy documents to projeto', () => {
